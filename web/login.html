@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:,">
+  <title>QQBot 控制台 - 登录</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary: #f0f2f5;
+      --bg-secondary: #ffffff;
+      --text-primary: #1a1a2e;
+      --text-secondary: #5f6368;
+      --text-muted: #9aa0a6;
+      --accent: #4f6ef7;
+      --accent-hover: #3b56db;
+      --border: #e0e3e8;
+      --danger: #ea4335;
+      --radius: 8px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .login-bg {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      z-index: -1;
+    }
+
+    .login-card {
+      background: var(--bg-secondary);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+      width: 400px;
+      max-width: 92vw;
+      padding: 40px 36px 32px;
+      animation: fadeUp 0.4s ease-out;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .login-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .login-logo svg {
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .login-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-primary);
+      text-align: center;
+    }
+
+    .login-subtitle {
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text-primary);
+      background: #f8f9fb;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79,110,247,0.12);
+      background: var(--bg-secondary);
+    }
+
+    .form-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .login-error {
+      background: #fef2f2;
+      color: var(--danger);
+      font-size: 13px;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      display: none;
+      border: 1px solid #fecaca;
+    }
+
+    .login-error.show {
+      display: block;
+    }
+
+    .login-btn {
+      width: 100%;
+      padding: 12px 0;
+      border: none;
+      border-radius: var(--radius);
+      background: var(--accent);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      margin-top: 4px;
+    }
+
+    .login-btn:hover {
+      background: var(--accent-hover);
+    }
+
+    .login-btn:active {
+      transform: scale(0.98);
+    }
+
+    .login-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .captcha-row { display: flex; gap: 10px; margin-bottom: 0; }
+    .captcha-input { flex: 1; }
+    .captcha-btn {
+      flex-shrink: 0;
+      padding: 12px 16px;
+      border: 1.5px solid var(--accent);
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .captcha-btn:hover { background: var(--accent); color: #fff; }
+    .captcha-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .captcha-hint { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+
+    .login-footer {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="login-bg"></div>
+
+  <div class="login-card">
+    <div class="login-logo">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2.5">
+        <circle cx="18" cy="13" r="8"/>
+        <path d="M5 32c0-7.2 5.8-13 13-13s13 5.8 13 13"/>
+      </svg>
+      <span class="login-title">QQBot 控制台</span>
+    </div>
+    <p class="login-subtitle">请登录以继续使用面板</p>
+
+    <div class="login-error" id="loginError"></div>
+
+    <form id="loginForm" autocomplete="off">
+      <div class="form-group">
+        <label class="form-label" for="username">用户名</label>
+        <input class="form-input" type="text" id="username" name="username" placeholder="请输入用户名" required autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="password">密码</label>
+        <input class="form-input" type="password" id="password" name="password" placeholder="请输入密码" required>
+      </div>
+      <div class="form-group" id="captchaGroup" style="display:none">
+        <label class="form-label" for="captcha">验证码</label>
+        <div class="captcha-row">
+          <input class="form-input captcha-input" type="text" id="captcha" name="captcha" placeholder="请输入验证码" maxlength="32" autocomplete="off">
+          <button class="captcha-btn" type="button" id="sendCaptchaBtn">发送验证码</button>
+        </div>
+        <p class="captcha-hint">新设备或安全验证时需要，验证码将输出在控制台，有效期 3 分钟</p>
+      </div>
+      <button class="login-btn" type="submit" id="loginBtn">登 录</button>
+    </form>
+
+    <p class="login-footer">QQBot Web Adapter</p>
+  </div>
+
+  <script>
+    // 从当前 URL 计算 base path（例如 /qqbot-web/login.html → /qqbot-web）
+    const BASE = location.pathname.substring(0, location.pathname.lastIndexOf('/')) || '/qqbot-web'
+
+    const form = document.getElementById("loginForm")
+    const errorEl = document.getElementById("loginError")
+    const btn = document.getElementById("loginBtn")
+    const captchaGroup = document.getElementById("captchaGroup")
+    const captchaInput = document.getElementById("captcha")
+    const sendCaptchaBtn = document.getElementById("sendCaptchaBtn")
+    let captchaRequired = false
+    let captchaCooldown = 0
+
+    // 预检：是否需要验证码（新设备 / 账号被封禁）
+    async function precheckCaptcha() {
+      try {
+        const res = await fetch(`${BASE}/api/login/status`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.needCaptcha) {
+            captchaRequired = true
+            captchaGroup.style.display = ""
+          }
+        }
+      } catch {}
+    }
+
+    // 自动检测登录态：如果已登录则直接跳转面板
+    let authChecked = false
+    async function checkAuthAndRedirect() {
+      if (authChecked) return
+      authChecked = true
+      try {
+        const res = await fetch(`${BASE}/api/health`, { method: "GET" })
+        if (res.ok) {
+          window.location.replace(`${BASE}/`)
+          return true
+        }
+      } catch {}
+      // 未登录 → 预检是否需要验证码
+      precheckCaptcha()
+      return false
+    }
+
+    // 页面加载时检测（覆盖首次加载和 bfcache 恢复）
+    window.addEventListener("pageshow", () => { checkAuthAndRedirect() })
+    checkAuthAndRedirect()
+
+    // 发送验证码
+    sendCaptchaBtn.addEventListener("click", async () => {
+      if (captchaCooldown > 0) return
+      sendCaptchaBtn.disabled = true
+      sendCaptchaBtn.textContent = "发送中..."
+      try {
+        const res = await fetch(`${BASE}/api/login/captcha`, { method: "POST" })
+        const data = await res.json()
+        if (res.ok) {
+          errorEl.classList.remove("show")
+          startCaptchaCooldown()
+        } else {
+          if (data.cooldown != null) {
+            startCaptchaCooldown(data.cooldown)
+          }
+          errorEl.textContent = data.error || "获取验证码失败"
+          errorEl.classList.add("show")
+        }
+      } catch {
+        sendCaptchaBtn.disabled = false
+        sendCaptchaBtn.textContent = "发送验证码"
+        errorEl.textContent = "网络错误，无法发送验证码"
+        errorEl.classList.add("show")
+      }
+    })
+
+    function startCaptchaCooldown(seconds) {
+      captchaCooldown = seconds || 60
+      sendCaptchaBtn.disabled = true
+      function tick() {
+        sendCaptchaBtn.textContent = `${captchaCooldown}s 后可重发`
+        captchaCooldown--
+        if (captchaCooldown >= 0) {
+          setTimeout(tick, 1000)
+        } else {
+          sendCaptchaBtn.disabled = false
+          sendCaptchaBtn.textContent = "发送验证码"
+        }
+      }
+      tick()
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault()
+
+      errorEl.classList.remove("show")
+      const username = document.getElementById("username").value.trim()
+      const password = document.getElementById("password").value.trim()
+
+      if (!username || !password) {
+        errorEl.textContent = "用户名和密码不能为空"
+        errorEl.classList.add("show")
+        return
+      }
+
+      if (captchaRequired) {
+        const captcha = captchaInput.value.trim()
+        if (!captcha) {
+          errorEl.textContent = "请输入验证码"
+          errorEl.classList.add("show")
+          return
+        }
+      }
+
+      btn.disabled = true
+      btn.textContent = "登录中..."
+
+      try {
+        const body = { username, password }
+        if (captchaRequired) body.captcha = captchaInput.value.trim()
+
+        const res = await fetch(`${BASE}/api/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+
+        const data = await res.json()
+
+        if (res.ok && data.ok) {
+          window.location.replace(`${BASE}/`)
+        } else {
+          errorEl.textContent = data.error || "登录失败，请重试"
+          errorEl.classList.add("show")
+
+          // 服务端要求验证码
+          if (data.requireCaptcha) {
+            captchaRequired = true
+            captchaGroup.style.display = ""
+            errorEl.textContent = data.error
+          }
+        }
+      } catch (err) {
+        errorEl.textContent = "网络错误，无法连接到服务器"
+        errorEl.classList.add("show")
+      } finally {
+        btn.disabled = false
+        btn.textContent = "登 录"
+      }
+    })
+  </script>
+</body>
+</html>

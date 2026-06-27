@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>QQBot 控制台</title>
+  <link rel="icon" href="favicon.ico">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部栏 -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="bot-selector" id="botSelector">
+          <img class="bot-avatar" id="currentBotAvatar" src="" alt="avatar">
+          <div class="bot-info">
+            <div class="bot-nickname" id="currentBotNickname">选择 Bot</div>
+            <div class="bot-qq" id="currentBotQQ"></div>
+          </div>
+          <svg class="bot-dropdown-arrow" width="12" height="12" viewBox="0 0 12 12"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+        </div>
+        <div class="bot-dropdown" id="botDropdown"></div>
+      </div>
+      <div class="topbar-title">QQBot Web 控制台</div>
+      <div class="topbar-right">
+        <button class="logout-btn" id="logoutBtn" title="退出登录">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M11 11l3-3-3-3M14 8H6"/></svg>
+          退出
+        </button>
+      </div>
+    </header>
+
+    <div class="main-container">
+      <!-- 左侧边栏 -->
+      <aside class="sidebar" id="sidebar">
+        <nav class="sidebar-nav">
+          <a class="nav-item active" data-page="dashboard" href="#dashboard">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="2" width="7" height="7" rx="1"/><rect x="11" y="2" width="7" height="7" rx="1"/><rect x="2" y="11" width="7" height="7" rx="1"/><rect x="11" y="11" width="7" height="7" rx="1"/></svg>
+            <span>仪表盘</span>
+          </a>
+          <a class="nav-item" data-page="messages" href="#messages">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H8l-4 3V4z"/></svg>
+            <span>消息记录</span>
+          </a>
+          <a class="nav-item" data-page="blacklist" href="#blacklist">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M13.5 4.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM10 9c-3.3 0-6 2-6 4.5V15h12v-1.5c0-2.5-2.7-4.5-6-4.5z" opacity="0.4"/><line x1="4" y1="3" x2="16" y2="17" stroke="currentColor" stroke-width="1.5"/></svg>
+            <span>黑名单</span>
+          </a>
+          <a class="nav-item" data-page="settings" href="#settings">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path fill-rule="evenodd" d="M11.08 2.25c-.92 0-1.7.66-1.85 1.57L9.05 4.9c-.02.12-.12.26-.3.35a7.5 7.5 0 00-.98.57c-.17.11-.33.12-.45.08L6.3 5.51a1.88 1.88 0 00-2.28.82l-.92 1.6a1.88 1.88 0 00.43 2.38l.84.69c.1.08.17.23.15.43a7.6 7.6 0 000 1.14c.02.2-.06.35-.15.43l-.84.69a1.88 1.88 0 00-.43 2.38l.92 1.6a1.88 1.88 0 002.28.82l1.02-.38c.12-.05.28-.04.45.08.31.22.64.4.98.57.18.09.28.23.3.35l.18 1.07c.15.9.93 1.57 1.85 1.57h1.84c.92 0 1.7-.67 1.85-1.57l.18-1.07c.02-.12.12-.26.3-.35.34-.17.67-.36.98-.57.17-.12.34-.13.45-.08l1.02.38a1.88 1.88 0 002.28-.82l.92-1.6a1.88 1.88 0 00-.43-2.38l-.84-.69c-.1-.08-.17-.23-.15-.43a7.6 7.6 0 000-1.14c-.02-.2.06-.35.15-.43l.84-.69a1.88 1.88 0 00.43-2.38l-.92-1.6a1.88 1.88 0 00-2.28-.82l-1.02.38c-.12.04-.28.03-.45-.08a7.5 7.5 0 00-.98-.57c-.18-.09-.28-.23-.3-.35l-.18-1.07a1.88 1.88 0 00-1.85-1.57h-1.84z" clip-rule="evenodd"/></svg>
+            <span>设置</span>
+          </a>
+          <div class="sidebar-spacer"></div>
+        </nav>
+        <div class="sidebar-toggle" id="sidebarToggle" title="展开/折叠侧边栏">
+          <svg class="sidebar-toggle-icon" width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+          <span class="sidebar-toggle-text">收起</span>
+        </div>
+      </aside>
+
+      <!-- 主内容区 -->
+      <main class="content" id="mainContent">
+        <!-- 仪表盘 -->
+        <div class="page active" id="page-dashboard">
+          <div class="dashboard">
+            <h2>仪表盘</h2>
+            <div class="dashboard-placeholder" id="dashboardPlaceholder">
+              <svg width="80" height="80" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="40" cy="40" r="30" opacity="0.2"/>
+                <path d="M25 40a15 15 0 0115-15M40 25v15l10 6" stroke="currentColor" opacity="0.5"/>
+              </svg>
+              <p>请在顶部选择一个 Bot 以查看信息</p>
+            </div>
+            <div class="dashboard-content" id="dashboardContent" style="display:none">
+              <div class="dash-inner">
+              <!-- 第一行：左信息 + 右资源 -->
+              <div class="dash-row">
+                <!-- 左侧：Bot信息 + 版本信息 -->
+                <div class="dash-left">
+                  <div class="dash-bot-card">
+                    <img class="dash-bot-avatar" id="dashBotAvatar" src="" alt="avatar">
+                    <div class="dash-bot-info">
+                      <div class="dash-bot-nickname" id="dashBotNickname">-</div>
+                      <div class="dash-bot-meta">
+                        <span class="dash-bot-qq" id="dashBotQQ">-</span>
+                        <span class="dash-bot-appid" id="dashBotAppid">AppID: -</span>
+                        <span class="dash-bot-uptime" id="dashBotUptime">-</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="dash-version-card">
+                    <div class="dash-version-header">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M7 1v3M7 10v3M3 4.5a2 2 0 012-2h4a2 2 0 012 2V7a2 2 0 01-2 2H5a2 2 0 01-2-2V4.5z"/></svg>
+                      <span>版本</span>
+                    </div>
+                    <div class="dash-version-divider"></div>
+                    <div class="dash-version-item">
+                      <span class="dash-version-label">WebAdapter</span>
+                      <span class="dash-version-val" id="verWebAdapter">-</span>
+                    </div>
+                    <div class="dash-version-item">
+                      <span class="dash-version-label">QQBot-Plugin</span>
+                      <span class="dash-version-val" id="verQQBotPlugin">-</span>
+                    </div>
+                    <div class="dash-version-item">
+                      <span class="dash-version-label">系统</span>
+                      <span class="dash-version-val" id="verSystem">-</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 右侧：系统资源 -->
+                <div class="dash-resource-box">
+                  <div class="dash-res-info">
+                    <!-- CPU 信息 -->
+                    <div class="dash-res-section">
+                      <div class="dash-res-section-title">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="11" height="7" rx="1.5"/><path d="M4.5 1.5v2M9.5 1.5v2M4.5 10.5v2M9.5 10.5v2M6.5 1v2.5M7.5 1v2.5M6.5 10.5v2.5M7.5 10.5v2.5"/></svg>
+                        <span>CPU</span>
+                      </div>
+                      <div class="dash-res-grid dash-res-grid-cpu">
+                        <div class="dash-res-item dash-res-full"><span class="dash-res-label">型号</span><span class="dash-res-val" id="resCpuModel">-</span></div>
+                        <div class="dash-res-item"><span class="dash-res-label">主频</span><span class="dash-res-val" id="resCpuSpeed">-</span></div>
+                        <div class="dash-res-item"><span class="dash-res-label">内核数</span><span class="dash-res-val" id="resCpuCores">-</span></div>
+                        <div class="dash-res-item"><span class="dash-res-label">机器人使用率</span><span class="dash-res-val" id="resCpuProcess">-</span></div>
+                        <div class="dash-res-item"><span class="dash-res-label">总使用率</span><span class="dash-res-val" id="resCpuTotal">-</span></div>
+                      </div>
+                    </div>
+                    <!-- 内存信息 -->
+                    <div class="dash-res-section">
+                      <div class="dash-res-section-title">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="1" width="10" height="12" rx="1"/><path d="M5.5 4v2M8.5 4v2M5.5 8v2M8.5 8v2"/></svg>
+                        <span>内存</span>
+                      </div>
+                      <div class="dash-res-grid dash-res-grid-mem">
+                        <div class="dash-res-item dash-res-full"><span class="dash-res-label">总内存</span><span class="dash-res-val" id="resMemTotal">-</span></div>
+                        <div class="dash-res-item"><span class="dash-res-label">机器人用量</span><span class="dash-res-val" id="resMemProcess">-</span></div>
+                        <div class="dash-res-item"><span class="dash-res-label">总使用量</span><span class="dash-res-val" id="resMemUsed">-</span></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 右侧1/3：环形图 -->
+                  <div class="dash-rings">
+                    <div class="ring-wrap" id="ringWrapCpu">
+                      <svg class="ring-svg" viewBox="0 0 120 120">
+                        <circle class="ring-bg" cx="60" cy="60" r="50"/>
+                        <circle class="ring-other ring-cpu-other" id="ringCpuOther" cx="60" cy="60" r="50"/>
+                        <circle class="ring-bot ring-cpu-bot" id="ringCpuBot" cx="60" cy="60" r="50"/>
+                      </svg>
+                      <div class="ring-center">
+                        <div class="ring-center-label">CPU占用</div>
+                        <div class="ring-center-pct" id="ringCpuPct">--</div>
+                      </div>
+                      <div class="ring-tooltip" id="ringTooltipCpu">
+                        <div class="ring-tt-row"><span class="ring-tt-dot" style="background:#4a90d9"></span><span>本进程: <b id="ttCpuBot">-</b></span></div>
+                        <div class="ring-tt-row"><span class="ring-tt-dot" style="background:#4caf50"></span><span>其他进程: <b id="ttCpuOther">-</b></span></div>
+                        <div class="ring-tt-row"><span class="ring-tt-dot" style="background:#e0e0e0"></span><span>空闲: <b id="ttCpuIdle">-</b></span></div>
+                      </div>
+                    </div>
+                    <div class="ring-wrap" id="ringWrapMem">
+                      <svg class="ring-svg" viewBox="0 0 120 120">
+                        <circle class="ring-bg" cx="60" cy="60" r="50"/>
+                        <circle class="ring-other ring-mem-other" id="ringMemOther" cx="60" cy="60" r="50"/>
+                        <circle class="ring-bot ring-mem-bot" id="ringMemBot" cx="60" cy="60" r="50"/>
+                      </svg>
+                      <div class="ring-center">
+                        <div class="ring-center-label">内存占用</div>
+                        <div class="ring-center-pct" id="ringMemPct">--</div>
+                      </div>
+                      <div class="ring-tooltip" id="ringTooltipMem">
+                        <div class="ring-tt-row"><span class="ring-tt-dot" style="background:#4a90d9"></span><span>本进程: <b id="ttMemBot">-</b></span></div>
+                        <div class="ring-tt-row"><span class="ring-tt-dot" style="background:#4caf50"></span><span>其他进程: <b id="ttMemOther">-</b></span></div>
+                        <div class="ring-tt-row"><span class="ring-tt-dot" style="background:#e0e0e0"></span><span>空闲: <b id="ttMemIdle">-</b></span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 磁盘信息 -->
+              <div class="dash-disk-card">
+                <div class="dash-disk-header">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><ellipse cx="7" cy="7" rx="5.5" ry="5.5"/><ellipse cx="7" cy="7" rx="2" ry="2"/></svg>
+                  <span>磁盘</span>
+                </div>
+                <div class="dash-disk-divider"></div>
+                <div class="dash-disk-list" id="diskList">
+                  <div class="dash-disk-item">
+                    <span class="dash-disk-name">-</span>
+                    <div class="dash-disk-bar-wrap">
+                      <div class="dash-disk-bar">
+                        <div class="dash-disk-fill" style="width:0%"></div>
+                      </div>
+                      <span class="dash-disk-pct">-</span>
+                    </div>
+                    <span class="dash-disk-detail">-</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 统计卡片 -->
+              <div class="stat-cards">
+                <div class="stat-card">
+                  <div class="stat-label">QQBot 数量</div>
+                  <div class="stat-value" id="statBotCount">-</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">活跃群数量</div>
+                  <div class="stat-value" id="statGroupCount">-</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">全量群数量</div>
+                  <div class="stat-value" id="statQuanliangCount">-</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">私聊数量</div>
+                  <div class="stat-value" id="statPrivateCount">-</div>
+                </div>
+              </div>
+
+              <!-- 系统信息 (fastfetch) -->
+              <div class="dash-sysinfo-card" id="dashSysInfoCard">
+                <div class="dash-sysinfo-header">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="1" width="12" height="9" rx="1.5"/><path d="M4.5 13h5M7 10v3"/></svg>
+                  <span>系统信息</span>
+                </div>
+                <div class="dash-sysinfo-divider"></div>
+                <div class="dash-sysinfo-text" id="dashSysInfo">获取中...</div>
+              </div>
+              </div><!-- .dash-inner -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 消息记录 / 聊天 -->
+        <div class="page" id="page-messages">
+          <div class="chat-layout" id="chatLayout">
+            <div class="chat-group-list" id="chatGroupList">
+              <div class="group-list-header">
+                <div class="chat-list-selector" id="chatListSelector">
+                  <button class="chat-list-sel-item active" data-chat-type="group" data-mode="active">活跃群</button>
+                  <button class="chat-list-sel-item" data-chat-type="group" data-mode="quanliang">全量群</button>
+                  <button class="chat-list-sel-item" data-chat-type="private">私聊</button>
+                </div>
+                <input type="text" class="group-search" id="groupSearch" placeholder="搜索...">
+              </div>
+              <div class="group-list-items" id="groupListItems">
+                <div class="group-list-empty">加载群列表中...</div>
+              </div>
+            </div>
+            <div class="chat-area" id="chatArea">
+              <div class="chat-empty" id="chatEmpty">
+                <svg width="64" height="64" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                  <rect x="8" y="12" width="48" height="36" rx="4"/>
+                  <path d="M20 24h24M20 32h16"/>
+                </svg>
+                <p>选择一个群聊查看消息记录</p>
+              </div>
+              <div class="chat-header" id="chatHeader" style="display:none">
+                <button class="chat-header-back" id="chatHeaderBack" title="返回">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                </button>
+                <div class="chat-header-info">
+                  <div class="chat-header-name" id="chatHeaderName">群聊名称</div>
+                  <div class="chat-header-id" id="chatHeaderId">群ID</div>
+                </div>
+                <button class="chat-header-info-btn" id="chatHeaderInfoBtn" title="群信息">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="4" width="16" height="1.6" rx="0.8"/><rect x="2" y="9.2" width="16" height="1.6" rx="0.8"/><rect x="2" y="14.4" width="16" height="1.6" rx="0.8"/></svg>
+                </button>
+              </div>
+              <div class="chat-messages" id="chatMessages">
+                <div class="messages-loading" id="loadMoreIndicator" style="display:none">
+                  <div class="loading-spinner"></div>
+                  加载更多...
+                </div>
+                <div class="messages-no-more" id="noMoreMessages" style="display:none">没有更多消息了</div>
+              </div>
+              <div class="scroll-float-group" id="scrollFloatGroup" style="display:none">
+                <div class="unread-badge" id="unreadBadge" style="display:none" title="点击跳转到第一条未读消息"></div>
+                <div class="scroll-arrow-badge" id="scrollArrowBadge" style="display:none" title="滚动到底部">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>
+                </div>
+              </div>
+              <div class="chat-input-area" id="chatInputArea" style="display:none">
+                <div class="message-type-selector">
+                  <button class="msg-type-btn active" data-type="legacy">普通</button>
+                  <button class="msg-type-btn" data-type="markdown">MD消息</button>
+                  <button class="msg-type-btn" data-type="ark">Ark</button>
+                  <button class="msg-type-btn" data-type="media">富媒体</button>
+                  <label class="reply-msgid-toggle" title="开启后发送消息会引用最近一条消息的 msg_id 作为回复">
+                    <input type="checkbox" id="replyMsgIdToggle">
+                    <span class="reply-msgid-label">msg_id 回复</span>
+                  </label>
+                </div>
+                <div class="ark-form" id="arkForm" style="display:none">
+                  <div class="ark-form-row">
+                    <label>模板</label>
+                    <select id="arkTemplateSelect">
+                      <option value="23">23 - 图文列表</option>
+                      <option value="24">24 - 单图文卡片</option>
+                      <option value="37">37 - 大图卡片</option>
+                    </select>
+                  </div>
+                  <div class="ark-fields" id="arkFields23">
+                    <div class="ark-form-row"><label>描述 #DESC#</label><input id="ark23_desc" placeholder="描述文本"></div>
+                    <div class="ark-form-row"><label>提示 #PROMPT#</label><input id="ark23_prompt" placeholder="提示文本"></div>
+                    <div class="ark-form-row">
+                      <label>列表 #LIST#</label>
+                      <div class="ark-list-editor" id="arkListEditor">
+                        <div class="ark-list-items" id="arkListItems"></div>
+                        <button class="ark-add-item" id="arkAddItem">+ 添加条目</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="ark-fields" id="arkFields24" style="display:none">
+                    <div class="ark-form-row"><label>描述 #DESC#</label><input id="ark24_desc" placeholder="描述文本"></div>
+                    <div class="ark-form-row"><label>提示 #PROMPT#</label><input id="ark24_prompt" placeholder="提示文本"></div>
+                    <div class="ark-form-row"><label>标题 #TITLE#</label><input id="ark24_title" placeholder="标题"></div>
+                    <div class="ark-form-row"><label>详情 #METADESC#</label><input id="ark24_metadesc" placeholder="详情描述"></div>
+                    <div class="ark-form-row">
+                      <label>图片 #IMG#</label>
+                      <div class="ark-input-with-upload">
+                        <input id="ark24_img" placeholder="https://图片链接">
+                        <button class="ark-upload-btn" data-target="ark24_img" title="上传图片">
+                          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 12V2M5 6l4-4 4 4M3 12v3a1 1 0 001 1h10a1 1 0 001-1v-3"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="ark-form-row"><label>链接 #LINK#</label><input id="ark24_link" placeholder="https://跳转链接"></div>
+                    <div class="ark-form-row"><label>来源 #SUBTITLE#</label><input id="ark24_subtitle" placeholder="来源/子标题"></div>
+                  </div>
+                  <div class="ark-fields" id="arkFields37" style="display:none">
+                    <div class="ark-form-row"><label>提示 #PROMPT#</label><input id="ark37_prompt" placeholder="提示文本"></div>
+                    <div class="ark-form-row"><label>标题 #METATITLE#</label><input id="ark37_title" placeholder="标题"></div>
+                    <div class="ark-form-row"><label>子标题 #METASUBTITLE#</label><input id="ark37_subtitle" placeholder="子标题"></div>
+                    <div class="ark-form-row">
+                      <label>封面 #METACOVER#</label>
+                      <div class="ark-input-with-upload">
+                        <input id="ark37_cover" placeholder="https://图片链接 (975x540)">
+                        <button class="ark-upload-btn" data-target="ark37_cover" title="上传图片">
+                          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 12V2M5 6l4-4 4 4M3 12v3a1 1 0 001 1h10a1 1 0 001-1v-3"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="ark-form-row"><label class="ark-optional">链接 #METAURL#<span class="ark-note">（需报备域名，否则不显示）</span></label><input id="ark37_url" placeholder="https://跳转链接（可选，需报备）"></div>
+                  </div>
+                </div>
+                <div class="chat-input-row">
+                  <button class="chat-upload-btn" id="chatUploadBtn" title="上传文件">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 12V2M5 6l4-4 4 4M3 12v3a1 1 0 001 1h10a1 1 0 001-1v-3"/></svg>
+                  </button>
+                  <input type="file" class="chat-file-input" id="chatFileInput" style="display:none" multiple>
+                  <input type="file" class="chat-file-input" id="chatImageInput" style="display:none" accept="image/*">
+                  <div class="input-with-clear chat-input-wrapper" id="chatInputWrapper">
+                    <div class="chat-input" id="chatInput" contenteditable="true" data-placeholder="输入消息..."></div>
+                    <button class="input-clear-btn" id="chatInputInlineClear" title="清空">&times;</button>
+                  </div>
+                  <button class="chat-image-btn" id="chatImageBtn" title="上传图片到光标位置">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="14" height="14" rx="2"/><circle cx="6.5" cy="6.5" r="1.5"/><path d="M2 12l4-4 3 3 2-2 5 5"/></svg>
+                  </button>
+                  <button class="chat-clear-btn" id="chatInputClear" title="一键清空">一键清空</button>
+                  <button class="chat-send-btn" id="chatSendBtn">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><path d="M2 2l14 7L2 16v-5.5L9 9 2 7.5V2z"/></svg>
+                  </button>
+                </div>
+                <div class="reply-preview" id="replyPreview" style="display:none">
+                  <span class="reply-preview-text" id="replyPreviewText"></span>
+                  <button class="reply-preview-cancel" id="replyPreviewCancel">✕</button>
+                </div>
+                <div class="reply-preview msgid-reply-preview" id="msgIdReplyPreview" style="display:none">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" style="flex-shrink:0"><path d="M2 7l3-4M2 7l3 4M2 7h10"/></svg>
+                  <span class="reply-preview-text" id="msgIdReplyPreviewText"></span>
+                  <button class="reply-preview-cancel" id="msgIdReplyPreviewCancel">✕</button>
+                </div>
+                <div class="reply-preview msgid-reply-preview" id="eventIdReplyPreview" style="display:none">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" style="flex-shrink:0"><path d="M2 7l3-4M2 7l3 4M2 7h10"/></svg>
+                  <span class="reply-preview-text" id="eventIdReplyPreviewText"></span>
+                  <button class="reply-preview-cancel" id="eventIdReplyPreviewCancel">✕</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 设置 -->
+        <div class="page" id="page-settings">
+          <div class="settings-container">
+            <div class="settings-inner">
+            <h2>系统设置</h2>
+            <p class="settings-desc">修改敏感设置需要验证码。</p>
+
+            <!-- 基础设置 -->
+            <div class="settings-section">基础设置</div>
+            <div class="settings-group">
+              <label class="settings-label">Base Path（URL 路径前缀）</label>
+              <input type="text" class="settings-input" id="setBasePath" placeholder="qqbot-web">
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">登录开关</label>
+              <label class="settings-switch">
+                <input type="checkbox" id="setLoginEnabled">
+                <span class="settings-switch-slider"></span>
+              </label>
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">用户名</label>
+              <input type="text" class="settings-input" id="setUsername" placeholder="admin">
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">密码</label>
+              <input type="password" class="settings-input" id="setPassword" placeholder="••••••••">
+            </div>
+
+            <!-- 消息存储设置 -->
+            <div class="settings-section">消息存储设置</div>
+            <div class="settings-group">
+              <label class="settings-label">消息记录开关<span class="settings-help" data-tip="关闭后将不再记录消息及新活跃群，此功能为web端功能核心依赖，请勿轻易关闭！">?</span></label>
+              <label class="settings-switch">
+                <input type="checkbox" id="setAutoRecordMessage">
+                <span class="settings-switch-slider"></span>
+              </label>
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">消息存储后端<span class="settings-help" data-tip="选择消息存储方式。Redis 适合小规模部署，性能高；SQLite 无需额外服务，适合本地存储。切换后新消息会存入新的后端，旧数据不受影响。修改后立即生效，无需重启">?</span></label>
+              <div class="settings-select-row">
+                <select class="settings-select" id="setStorageBackend">
+                  <option value="redis">Redis（默认）</option>
+                  <option value="sqlite">SQLite</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">图片/视频缓存<span class="settings-help" data-tip="开启后会下载用户消息中的图片/视频到本地并保存；关闭则使用原始URL，但该URL会很快失效">?</span></label>
+              <label class="settings-switch">
+                <input type="checkbox" id="setAutoDownloadImgorVideo">
+                <span class="settings-switch-slider"></span>
+              </label>
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">缓存大小上限<span class="settings-help" data-tip="单个图片/视频文件的最大缓存大小，范围 1~100 MB，默认 10 MB。超过此大小的文件将使用原始URL而不下载缓存">?</span></label>
+              <div class="settings-size-row">
+                <input type="number" class="settings-size-input" id="setMaxMediaCacheSize" min="1" max="100" step="1" value="10">
+                <span class="settings-size-unit">MB</span>
+              </div>
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">记录/缓存保留天数<span class="settings-help" data-tip="最短1天，最长7天。时间越长，消息保留越久，图片/视频缓存越久，需要的存储空间也越大">?</span></label>
+              <div class="settings-select-row">
+                <select class="settings-select" id="setSaveTimes">
+                  <option value="1">1 天</option>
+                  <option value="2">2 天</option>
+                  <option value="3">3 天</option>
+                  <option value="4">4 天</option>
+                  <option value="5">5 天</option>
+                  <option value="6">6 天</option>
+                  <option value="7">7 天</option>
+                </select>
+                <span class="settings-cache-size" id="cacheSizeDisplay">计算中…</span>
+              </div>
+            </div>
+
+            <!-- 通知与安全 -->
+            <div class="settings-section">通知与安全</div>
+            <div class="settings-group">
+              <label class="settings-label">设置变动通知<span class="settings-help" data-tip="此设置存在变动时会自动通知此ID对应的用户。需在开放平台将用户加入私信沙箱，且该用户必须已添加机器人。OpenID获取方法：消息记录中点击用户头像弹出信息弹窗，复制OpenID填入此处">?</span></label>
+              <input type="text" class="settings-input" id="setNotifyUserId" placeholder="填写需要通知的用户 OpenID / UserID">
+            </div>
+
+            <!-- 其他设置 -->
+            <div class="settings-section">其他设置</div>
+            <div class="settings-group">
+              <label class="settings-label">全量群指令开关<span class="settings-help" data-tip="关闭后 #全量群、#全部全量群 指令不再响应，非主人也不会看到权限提示">?</span></label>
+              <label class="settings-switch">
+                <input type="checkbox" id="setEnableQuanliangCommands">
+                <span class="settings-switch-slider"></span>
+              </label>
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">HTTP 日志静默<span class="settings-help" data-tip="开启后不再显示 Web 面板的 HTTP 请求日志，减少控制台刷屏。默认关闭（正常显示日志）。此设置即时生效">?</span></label>
+              <label class="settings-switch">
+                <input type="checkbox" id="setHttpLogSilent">
+                <span class="settings-switch-slider"></span>
+              </label>
+            </div>
+
+            <!-- Napcat 连接设置 -->
+            <div class="settings-section">Napcat 连接设置</div>
+            <div class="settings-group">
+              <label class="settings-label">启用 Napcat HTTP 获取群信息<span class="settings-help" data-tip="开启后通过 Napcat HTTP 服务器获取绑定群的名称、成员数等信息。需先部署 Napcat 并正确配置地址、端口和 Token。关闭后将隐藏下方 Napcat 设置项">?</span></label>
+              <label class="settings-switch">
+                <input type="checkbox" id="setNapcatEnabled">
+                <span class="settings-switch-slider"></span>
+              </label>
+            </div>
+            <div id="napcatSettings" style="display:none">
+            <div class="settings-group">
+              <label class="settings-label">Napcat 地址</label>
+              <input type="text" class="settings-input" id="setNapcatHost" placeholder="127.0.0.1">
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">Napcat 端口</label>
+              <input type="number" class="settings-input" id="setNapcatPort" placeholder="3000" min="1" max="65535">
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">Napcat Token</label>
+              <input type="password" class="settings-input" id="setNapcatToken" placeholder="输入 Token">
+            </div>
+            </div>
+
+            <!-- 群信息刷新 -->
+            <div class="settings-section">群信息管理</div>
+            <div class="settings-group">
+              <label class="settings-label">刷新全部绑定群信息<span class="settings-help" data-tip="重新从 QQ/Napcat 获取所有已绑定群的群名称、成员数等信息并更新缓存">?</span></label>
+              <button class="refresh-all-btn" id="refreshAllGroupInfoBtn">一键刷新全部</button>
+            </div>
+
+            <div class="settings-actions">
+              <button class="settings-save-btn" id="settingsSaveBtn" disabled>保存配置</button>
+              <span class="settings-saved-hint" id="settingsSavedHint"></span>
+            </div>
+            </div><!-- .settings-inner -->
+          </div>
+        </div>
+
+        <!-- 黑名单 -->
+        <div class="page" id="page-blacklist">
+          <div class="blacklist-container">
+            <div class="blacklist-inner">
+              <h2>黑名单管理</h2>
+              <div class="blacklist-content" id="blacklistContent" style="display:none">
+                <div class="blacklist-panels">
+                  <!-- 用户黑名单 -->
+                  <div class="blacklist-panel">
+                    <div class="blacklist-panel-header">用户黑名单</div>
+                    <div class="blacklist-panel-body" id="blacklistUsers">
+                      <div class="blacklist-empty">暂无黑名单用户</div>
+                    </div>
+                  </div>
+                  <!-- 群黑名单 -->
+                  <div class="blacklist-panel">
+                    <div class="blacklist-panel-header">群聊黑名单</div>
+                    <div class="blacklist-panel-body" id="blacklistGroups">
+                      <div class="blacklist-empty">暂无黑名单群聊</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <nav class="mobile-nav" id="mobileNav">
+      <button class="mobile-nav-item active" data-page="dashboard">
+        <svg width="22" height="22" viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="2" width="7" height="7" rx="1"/><rect x="11" y="2" width="7" height="7" rx="1"/><rect x="2" y="11" width="7" height="7" rx="1"/><rect x="11" y="11" width="7" height="7" rx="1"/></svg>
+        仪表盘
+      </button>
+      <button class="mobile-nav-item" data-page="messages">
+        <svg width="22" height="22" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H8l-4 3V4z"/></svg>
+        消息
+      </button>
+      <button class="mobile-nav-item" data-page="blacklist">
+        <svg width="22" height="22" viewBox="0 0 20 20" fill="currentColor"><path d="M13.5 4.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM10 9c-3.3 0-6 2-6 4.5V15h12v-1.5c0-2.5-2.7-4.5-6-4.5z" opacity="0.4"/><line x1="4" y1="3" x2="16" y2="17" stroke="currentColor" stroke-width="1.5"/></svg>
+        黑名单
+      </button>
+      <button class="mobile-nav-item" data-page="settings">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path fill-rule="evenodd" d="M11.08 2.25c-.92 0-1.7.66-1.85 1.57L9.05 4.9c-.02.12-.12.26-.3.35a7.5 7.5 0 00-.98.57c-.17.11-.33.12-.45.08L6.3 5.51a1.88 1.88 0 00-2.28.82l-.92 1.6a1.88 1.88 0 00.43 2.38l.84.69c.1.08.17.23.15.43a7.6 7.6 0 000 1.14c.02.2-.06.35-.15.43l-.84.69a1.88 1.88 0 00-.43 2.38l.92 1.6a1.88 1.88 0 002.28.82l1.02-.38c.12-.05.28-.04.45.08.31.22.64.4.98.57.18.09.28.23.3.35l.18 1.07c.15.9.93 1.57 1.85 1.57h1.84c.92 0 1.7-.67 1.85-1.57l.18-1.07c.02-.12.12-.26.3-.35.34-.17.67-.36.98-.57.17-.12.34-.13.45-.08l1.02.38a1.88 1.88 0 002.28-.82l.92-1.6a1.88 1.88 0 00-.43-2.38l-.84-.69c-.1-.08-.17-.23-.15-.43a7.6 7.6 0 000-1.14c-.02-.2.06-.35.15-.43l.84-.69a1.88 1.88 0 00.43-2.38l-.92-1.6a1.88 1.88 0 00-2.28-.82l-1.02.38c-.12.04-.28.03-.45-.08a7.5 7.5 0 00-.98-.57c-.18-.09-.28-.23-.3-.35l-.18-1.07a1.88 1.88 0 00-1.85-1.57h-1.84z" clip-rule="evenodd"/></svg>
+        设置
+      </button>
+    </nav>
+  </div>
+
+  <div class="context-menu" id="contextMenu" style="display:none">
+    <div class="context-menu-item" data-action="copy">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+      复制文本
+    </div>
+    <div class="context-menu-item" data-action="copymsg">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="1" y="1" width="9" height="9" rx="1"/><path d="M4 4h8v8a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
+      复制消息
+    </div>
+    <div class="context-menu-item" data-action="raw">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 3h10M2 7h10M2 11h7"/></svg>
+      查看 rawMsg
+    </div>
+    <div class="context-menu-item" data-action="rawevent" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 2h10v3H2V2zM2 7h10v5H2V7z"/></svg>
+      查看 rawEvent
+    </div>
+    <div class="context-menu-item" data-action="reply">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 7l3-4M2 7l3 4M2 7h10"/></svg>
+      引用回复
+    </div>
+    <div class="context-menu-item" data-action="reply_msgid">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 2h10v10H2z"/><path d="M5 5l4 3-4 3V5z" fill="#fff"/></svg>
+      使用本消息 msg_id 回复
+    </div>
+    <div class="context-menu-item" data-action="reply_eventid" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 2h10v10H2z"/><path d="M5 5l4 3-4 3V5z" fill="#fff"/></svg>
+      使用本消息 event_id 回复
+    </div>
+    <div class="context-menu-item" data-action="echo">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 2h10v3H2V2zM2 9h8v3H2V9z"/></svg>
+      复读
+    </div>
+    <div class="context-menu-item" data-action="echo_md">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M3 10h8l-4-6-4 6z"/></svg>
+      复读(MD)
+    </div>
+    <div class="context-menu-item" data-action="at">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="4" r="3"/><path d="M2 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg>
+      @ 提及
+    </div>
+    <div class="context-menu-item" data-action="userInfo">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="5" r="3"/><path d="M2 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/><rect x="5" y="0" width="4" height="2" rx="1"/></svg>
+      用户信息
+    </div>
+    <div class="context-menu-item danger" data-action="recall" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 3h10v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3z"/><path d="M5 1h4v2H5V1zM5 6v5M7 6v5M9 6v5" stroke="currentColor" stroke-width="1" fill="none"/></svg>
+      撤回消息
+    </div>
+    <div class="context-menu-item danger" data-action="delete" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 3h10v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3zM5 1h4v2H5V1z"/></svg>
+      删除消息
+    </div>
+    <div class="context-menu-divider" data-divider="bl" style="display:none"></div>
+    <div class="context-menu-item danger" data-action="blacklist-user" id="ctxBlUser" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="4" r="3"/><path d="M2 12l3-2 5-3.5L11 8l-5 3.5-3 2z"/></svg>
+      拉黑此用户
+    </div>
+    <div class="context-menu-item" data-action="unblacklist-user" id="ctxUnblUser" style="display:none;color:#4caf50">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="4" r="3"/><path d="M6 11l-3-3 1-1 2 2 4-4 1 1-5 5z"/></svg>
+      取消拉黑此用户
+    </div>
+  </div>
+
+  <div class="context-menu" id="groupContextMenu" style="display:none">
+    <div class="context-menu-item" data-action="note">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 10h4l6-6-4-4-6 6v4zM10 3l2 2"/></svg>
+      修改群备注
+    </div>
+    <div class="context-menu-item" data-action="bind-group" id="ctxBindGroup">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M3 2h8a1 1 0 011 1v8a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6l1.5 1.5L9 5" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+      绑定QQ群号
+    </div>
+    <div class="context-menu-item" data-action="unbind-group" id="ctxUnbindGroup" style="display:none;color:#ff9800">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M3 2h8a1 1 0 011 1v8a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5l4 4M9 5l-4 4" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+      取消绑定QQ群号
+    </div>
+    <div class="context-menu-item" data-action="refresh-group-info" id="ctxRefreshGroupInfo" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 7a5 5 0 019-3M12 7a5 5 0 01-9 3M11 1v3h-3M3 13v-3h3" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
+      刷新群信息
+    </div>
+    <div class="context-menu-item danger" data-action="blacklist-group" id="ctxBlGroup">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M4 2h6v1H4V2zM2 4h10v8a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/></svg>
+      拉黑群聊
+    </div>
+    <div class="context-menu-item" data-action="unblacklist-group" id="ctxUnblGroup" style="display:none;color:#4caf50">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M6 11l-3-3 1-1 2 2 4-4 1 1-5 5z"/></svg>
+      取消拉黑群聊
+    </div>
+  </div>
+
+  <div class="context-menu" id="privateUserContextMenu" style="display:none">
+    <div class="context-menu-item danger" data-action="blacklist-pv-user" id="ctxBlPvUser">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="4" r="3"/><path d="M2 12l3-2 5-3.5L11 8l-5 3.5-3 2z"/></svg>
+      拉黑此用户
+    </div>
+    <div class="context-menu-item" data-action="unblacklist-pv-user" id="ctxUnblPvUser" style="display:none;color:#4caf50">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="4" r="3"/><path d="M6 11l-3-3 1-1 2 2 4-4 1 1-5 5z"/></svg>
+      取消拉黑此用户
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="rawModal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span id="rawModalTitle">Raw Data</span>
+        <button class="modal-close" id="rawModalClose">✕</button>
+      </div>
+      <pre class="modal-body" id="rawModalBody"></pre>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="groupNoteModal" style="display:none">
+    <div class="modal-content note-modal-content">
+      <div class="modal-header">
+        <span>修改群备注</span>
+        <button class="modal-close" id="noteModalClose">✕</button>
+      </div>
+      <div class="note-modal-body">
+        <div class="note-modal-group-id" id="noteModalGroupId"></div>
+        <input type="text" class="note-modal-input" id="noteModalInput" placeholder="输入群备注...">
+        <div class="note-modal-actions">
+          <button class="note-modal-btn note-modal-save" id="noteModalSave">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="bindGroupModal" style="display:none">
+    <div class="modal-content note-modal-content">
+      <div class="modal-header">
+        <span>绑定QQ群号</span>
+        <button class="modal-close" id="bindModalClose">✕</button>
+      </div>
+      <div class="note-modal-body">
+        <div class="note-modal-group-id" id="bindModalGroupId"></div>
+        <input type="text" class="note-modal-input" id="bindModalInput" placeholder="输入QQ群号（5-12位数字）" maxlength="12" inputmode="numeric" pattern="[0-9]*">
+        <p class="bind-modal-hint" id="bindModalHint" style="color:#aaa;font-size:12px;margin-top:4px"></p>
+        <div class="note-modal-actions">
+          <button class="note-modal-btn note-modal-save" id="bindModalSave">确认绑定</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="codeModal" style="display:none">
+    <div class="modal-content code-modal-content">
+      <div class="modal-header">
+        <span>安全验证</span>
+        <button class="modal-close" id="codeModalClose">✕</button>
+      </div>
+      <div class="code-modal-body">
+        <p class="code-modal-desc">修改敏感设置需要验证码。</p>
+        <p class="code-modal-desc">验证码已发送到<strong>后台日志</strong>，有效期 3 分钟。</p>
+        <div class="code-modal-input-row">
+          <input type="text" class="code-modal-input" id="codeModalInput" placeholder="输入32位验证码" maxlength="32" autocomplete="off">
+          <span class="code-modal-attempts" id="codeModalAttempts"></span>
+        </div>
+        <p class="code-modal-error" id="codeModalError"></p>
+        <div class="code-modal-actions">
+          <button class="note-modal-btn" id="codeModalResend">重新获取验证码</button>
+          <button class="note-modal-btn note-modal-save" id="codeModalConfirm">确认</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 用户信息弹窗 -->
+  <div class="modal-overlay" id="userInfoModal" style="display:none">
+    <div class="modal-content user-info-content">
+      <div class="modal-header">
+        <span>用户信息</span>
+        <button class="modal-close" id="userInfoModalClose">✕</button>
+      </div>
+      <div class="user-info-body">
+        <div class="user-info-avatar-wrap">
+          <img class="user-info-avatar" id="userInfoAvatar" src="" alt="" onerror="this.style.display='none'">
+          <div class="user-info-avatar-fallback" id="userInfoAvatarFallback" style="display:none"></div>
+        </div>
+        <div class="user-info-nick-row">
+          <span class="user-info-nick" id="userInfoNick"></span>
+          <span class="user-info-bot-badge" id="userInfoBotBadge" style="display:none">Bot</span>
+          <button class="user-info-copy-btn" id="userInfoCopyNick" title="复制昵称">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+          </button>
+        </div>
+        <div class="user-info-fields">
+          <div class="user-info-field">
+            <span class="user-info-label">Union ID</span>
+            <div class="user-info-value-row">
+              <span class="user-info-value" id="userInfoUnionId">-</span>
+              <button class="user-info-copy-btn" data-copy="union" title="复制">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="user-info-field">
+            <span class="user-info-label">Open ID</span>
+            <div class="user-info-value-row">
+              <span class="user-info-value" id="userInfoOpenId">-</span>
+              <button class="user-info-copy-btn" data-copy="open" title="复制">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="user-info-field">
+            <span class="user-info-label">User ID</span>
+            <div class="user-info-value-row">
+              <span class="user-info-value" id="userInfoUserId">-</span>
+              <button class="user-info-copy-btn" data-copy="uid" title="复制">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="user-info-field">
+            <span class="user-info-label">头像链接</span>
+            <div class="user-info-value-row">
+              <span class="user-info-value" id="userInfoAvatarUrl">-</span>
+              <button class="user-info-copy-btn" data-copy="avatar" title="复制链接">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+              </button>
+              <button class="user-info-copy-btn user-info-jump-btn" id="userInfoJumpAvatar" title="在浏览器中打开头像">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M10 1h3v3M13 1L7 7M3 2H2a1 1 0 00-1 1v9a1 1 0 001 1h9a1 1 0 001-1v-1"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="user-info-actions" id="userInfoActions" style="display:none">
+          <button class="user-info-bl-btn" id="userInfoBlBtn">拉黑此用户</button>
+          <button class="user-info-unbl-btn" id="userInfoUnblBtn" style="display:none;color:#4caf50">取消拉黑此用户</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 群成员列表弹窗 -->
+  <div class="modal-overlay" id="memberListModal" style="display:none">
+    <div class="modal-content member-list-content">
+      <div class="modal-header">
+        <span id="memberListModalTitle">群成员</span>
+        <button class="modal-close" id="memberListModalClose">✕</button>
+      </div>
+      <div class="member-list-search">
+        <input type="text" id="memberListSearch" placeholder="搜索成员昵称..." autocomplete="off">
+      </div>
+      <div class="member-list-body" id="memberListBody">
+        <div class="member-list-loading">加载中...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ctx-menu" id="ctxMenu" style="display:none"></div>
+  <script src="app.js"></script>
+</body>
+</html>

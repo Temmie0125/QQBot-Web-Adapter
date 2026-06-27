@@ -1,0 +1,5 @@
+# 本地配置文件（含密码等敏感信息）
+config/config.yaml
+
+# 依赖
+node_modules/
