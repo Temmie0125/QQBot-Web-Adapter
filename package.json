@@ -1,0 +1,7 @@
+{
+  "name": "QQBot-Web-Adapter",
+  "type": "module",
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}

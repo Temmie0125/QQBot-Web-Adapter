@@ -261,6 +261,21 @@ function renderBotDropdown() {
     </div>
   `).join("") || '<div class="bot-dropdown-item" style="color:var(--text-muted)">没有可用的 Bot</div>'
 
+  // 底部添加 Bot 入口
+  dropdown.insertAdjacentHTML("beforeend", `
+    <div class="bot-dropdown-add" id="botDropdownAddBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <span>添加 Bot</span>
+    </div>
+  `)
+  const addItem = dropdown.querySelector("#botDropdownAddBtn")
+  if (addItem) {
+    addItem.addEventListener("click", () => {
+      closeBotDropdown()
+      $("#addBotBtn")?.click()
+    })
+  }
+
   dropdown.querySelectorAll(".bot-dropdown-item[data-bot-id]").forEach(el => {
     el.addEventListener("click", () => {
       selectBot(el.dataset.botId)
@@ -6019,6 +6034,9 @@ function setupEventListeners() {
     })
   }
 
+  // 添加 Bot 弹窗
+  initAddBotModal()
+
   // 侧边栏折叠/展开切换（独立底部按钮，非 nav-item，不触发页面导航）
   const sidebar = $("#sidebar")
   const sidebarToggle = $("#sidebarToggle")
@@ -6513,6 +6531,211 @@ async function unblockGroup(groupId) {
     console.error("[unblockGroup] 取消拉黑失败:", err)
     showToast("取消拉黑失败: " + err.message)
   }
+}
+
+// ===== 添加 Bot 弹窗 =====
+function initAddBotModal() {
+  const modal = $("#addBotModal")
+  const addBtn = $("#addBotBtn")
+  const closeBtn = $("#modalCloseBtn")
+  // 面板/按钮引用
+  const tabAppid = $(".modal-tab[data-tab='appid']")
+  const tabQrcode = $(".modal-tab[data-tab='qrcode']")
+  const panelAppid = $("#panelAppid")
+  const panelQrcode = $("#panelQrcode")
+  const inputAppid = $("#inputAppid")
+  const inputSecret = $("#inputSecret")
+  const appidError = $("#appidError")
+  const btnAppidLogin = $("#btnAppidLogin")
+  const btnQrStart = $("#btnQrStart")
+  const qrStatus = $("#qrStatus")
+  const qrImgWrap = $("#qrImgWrap")
+  const qrImage = $("#qrImage")
+  const privateDomainGroup = $("#privateDomainGroup")
+  if (!modal || !addBtn) return
+
+  let qrTimer = null, qrTaskId = null, qrKey = null
+
+  // 重置表单
+  function resetForm() {
+    if (inputAppid) inputAppid.value = ""
+    if (inputSecret) inputSecret.value = ""
+    if (appidError) appidError.style.display = "none"
+    if (btnAppidLogin) { btnAppidLogin.disabled = false; btnAppidLogin.textContent = "登录" }
+    if (qrStatus) qrStatus.textContent = "正在生成二维码..."
+    if (qrImgWrap) qrImgWrap.style.display = "none"
+    if (btnQrStart) { btnQrStart.disabled = false; btnQrStart.textContent = "刷新二维码" }
+    clearQRPolling()
+    clearQRImage()
+    // 默认选中 AppID tab
+    if (tabAppid) tabAppid.click()
+  }
+
+  function clearQRPolling() {
+    if (qrTimer) { clearInterval(qrTimer); qrTimer = null }
+    qrTaskId = null; qrKey = null
+  }
+
+  function clearQRImage() {
+    if (qrImage) qrImage.src = ""
+  }
+
+  // 打开弹窗
+  addBtn.addEventListener("click", () => {
+    resetForm()
+    modal.style.display = "flex"
+  })
+
+  // 关闭弹窗
+  function closeModal() {
+    clearQRPolling()
+    modal.style.display = "none"
+  }
+  if (closeBtn) closeBtn.addEventListener("click", closeModal)
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal()
+  })
+
+  // Tab 切换
+  if (tabAppid && tabQrcode) {
+    tabAppid.addEventListener("click", () => {
+      tabAppid.classList.add("active")
+      tabQrcode.classList.remove("active")
+      if (panelAppid) panelAppid.style.display = ""
+      if (panelQrcode) panelQrcode.style.display = "none"
+      clearQRPolling()
+    })
+    tabQrcode.addEventListener("click", () => {
+      tabQrcode.classList.add("active")
+      tabAppid.classList.remove("active")
+      if (panelQrcode) panelQrcode.style.display = ""
+      if (panelAppid) panelAppid.style.display = "none"
+      // 切到扫码 Tab 自动生成二维码（有缓存则复用）
+      if (!qrTaskId) autoStartQR()
+    })
+  }
+
+  // 连接方式切换时显示/隐藏公私域选项
+  const wsRadio = $("input[name='connMode'][value='ws']")
+  const whRadio = $("input[name='connMode'][value='webhook']")
+  function updatePrivateDomain() {
+    if (!privateDomainGroup) return
+    const mode = $("input[name='connMode']:checked")?.value
+    privateDomainGroup.style.display = mode === "webhook" ? "none" : ""
+  }
+  if (wsRadio) wsRadio.addEventListener("change", updatePrivateDomain)
+  if (whRadio) whRadio.addEventListener("change", updatePrivateDomain)
+
+  // AppID 登录
+  if (btnAppidLogin) {
+    btnAppidLogin.addEventListener("click", async () => {
+      const appid = inputAppid?.value?.trim()
+      const secret = inputSecret?.value?.trim()
+      if (!appid) return showError("请输入 AppID")
+      if (!secret) return showError("请输入 AppSecret")
+      btnAppidLogin.disabled = true
+      btnAppidLogin.textContent = "验证中..."
+      if (appidError) appidError.style.display = "none"
+      try {
+        const mode = $("input[name='connMode']:checked")?.value || "ws"
+        const pd = $("input[name='privateDomain']:checked")?.value || "0"
+        const res = await fetch(`${API_BASE}/bot/add-by-appid`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ appid, secret, mode, privateDomain: pd === "1" }),
+        })
+        const data = await res.json()
+        if (!res.ok || !data.ok) {
+          showError(data.error || "添加失败")
+        } else {
+          showToast(`Bot ${data.uin} ${data.existed ? "配置已更新" : "添加成功"}`)
+          setTimeout(closeModal, 1500)
+        }
+      } catch (err) {
+        showError("网络错误: " + err.message)
+      }
+      btnAppidLogin.disabled = false
+      btnAppidLogin.textContent = "登录"
+    })
+  }
+
+  function showError(msg) {
+    if (!appidError) return
+    appidError.textContent = msg
+    appidError.style.display = ""
+  }
+
+  // 扫码登录 - 自动生成 + 轮询
+  async function autoStartQR(forceRefresh = false) {
+    clearQRPolling()
+    if (qrImgWrap) qrImgWrap.style.display = "none"
+    clearQRImage()
+    if (qrStatus) qrStatus.textContent = "正在生成二维码..."
+    if (btnQrStart) { btnQrStart.disabled = true; btnQrStart.textContent = "生成中..." }
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 10000)
+    try {
+      const res = await fetch(`${API_BASE}/bot/add-qr-start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh: forceRefresh }),
+        signal: ctrl.signal,
+      })
+      clearTimeout(timer)
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        if (qrStatus) qrStatus.textContent = "生成失败: " + (data.error || "未知错误")
+        if (btnQrStart) { btnQrStart.disabled = false; btnQrStart.textContent = "重试" }
+        if (qrImgWrap) qrImgWrap.style.display = "none"
+        return
+      }
+      qrTaskId = data.taskId
+      qrKey = data.key
+      if (qrImage && data.qrImage) qrImage.src = data.qrImage
+      if (qrImgWrap) qrImgWrap.style.display = ""
+      if (qrStatus) qrStatus.textContent = data.cached ? "复用上次二维码，请扫码" : "请使用手机 QQ 扫描二维码"
+      if (btnQrStart) { btnQrStart.disabled = false; btnQrStart.textContent = "刷新二维码" }
+
+      // 轮询结果
+      startQRPolling()
+    } catch (err) {
+      clearTimeout(timer)
+      if (qrStatus) qrStatus.textContent = err.name === "AbortError" ? "请求超时，请重试" : "网络错误: " + err.message
+      if (btnQrStart) { btnQrStart.disabled = false; btnQrStart.textContent = "重试" }
+      if (qrImgWrap) qrImgWrap.style.display = "none"
+    }
+  }
+
+  function startQRPolling() {
+    if (qrTimer) clearInterval(qrTimer)
+    qrTimer = setInterval(async () => {
+      if (!qrTaskId || !qrKey) return
+      try {
+        const pollRes = await fetch(`${API_BASE}/bot/add-qr-poll`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ taskId: qrTaskId, key: qrKey }),
+        })
+        const pollData = await pollRes.json()
+        if (pollData.status === "ok") {
+          clearQRPolling()
+          if (qrStatus) qrStatus.textContent = `Bot ${pollData.uin} ${pollData.existed ? "配置已更新" : "添加成功"}`
+          showToast(`Bot ${pollData.uin} ${pollData.existed ? "配置已更新" : "添加成功"}`)
+          setTimeout(closeModal, 1500)
+        } else if (pollData.status === "timeout") {
+          clearQRPolling()
+          if (qrStatus) qrStatus.textContent = "扫码超时，请刷新二维码"
+          if (btnQrStart) { btnQrStart.disabled = false; btnQrStart.textContent = "刷新二维码" }
+          if (qrImgWrap) qrImgWrap.style.display = "none"
+        }
+      } catch {}
+    }, 2000)
+  }
+
+  if (btnQrStart) {
+    btnQrStart.addEventListener("click", () => autoStartQR(true))
+  }
+
 }
 
 // ===== 初始化 =====

@@ -25,12 +25,78 @@
       </div>
       <div class="topbar-title">QQBot Web 控制台</div>
       <div class="topbar-right">
-        <button class="logout-btn" id="logoutBtn" title="退出登录">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M11 11l3-3-3-3M14 8H6"/></svg>
-          退出
+        <button class="topbar-icon-btn" id="addBotBtn" title="添加 Bot">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button class="topbar-icon-btn logout-btn" id="logoutBtn" title="退出登录">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
         </button>
       </div>
     </header>
+
+    <!-- 添加 Bot 弹窗 -->
+    <div class="modal-overlay" id="addBotModal" style="display:none">
+      <div class="modal-container">
+        <button class="modal-close" id="modalCloseBtn" title="关闭">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <div class="modal-header">
+          <img class="modal-logo" src="favicon.ico" alt="logo" onerror="this.style.display='none'">
+          <h2 class="modal-title">添加 Bot</h2>
+        </div>
+        <div class="modal-tabs">
+          <button class="modal-tab active" data-tab="appid">AppID 登录</button>
+          <button class="modal-tab" data-tab="qrcode">扫码登录</button>
+        </div>
+        <!-- AppID 登录表单 -->
+        <div class="modal-panel" id="panelAppid">
+          <div class="form-group">
+            <label class="form-label">AppID</label>
+            <input type="text" class="form-input" id="inputAppid" placeholder="请输入机器人 AppID">
+          </div>
+          <div class="form-group">
+            <label class="form-label">AppSecret</label>
+            <input type="password" class="form-input" id="inputSecret" placeholder="请输入机器人 AppSecret">
+          </div>
+          <div class="form-group">
+            <label class="form-label">连接方式</label>
+            <div class="radio-group">
+              <label class="radio-item">
+                <input type="radio" name="connMode" value="ws" checked>
+                <span>WebSocket</span>
+              </label>
+              <label class="radio-item">
+                <input type="radio" name="connMode" value="webhook">
+                <span>WebHook</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group" id="privateDomainGroup">
+            <label class="form-label">频道类型</label>
+            <div class="radio-group">
+              <label class="radio-item">
+                <input type="radio" name="privateDomain" value="0" checked>
+                <span>公域</span>
+              </label>
+              <label class="radio-item">
+                <input type="radio" name="privateDomain" value="1">
+                <span>私域</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-error" id="appidError" style="display:none"></div>
+          <button class="modal-btn" id="btnAppidLogin">登录</button>
+        </div>
+        <!-- 扫码登录面板 -->
+        <div class="modal-panel" id="panelQrcode" style="display:none">
+          <div class="qr-status" id="qrStatus">正在生成二维码...</div>
+          <div class="qr-img-wrap" id="qrImgWrap" style="display:none">
+            <img id="qrImage" src="" alt="QR Code" style="width:200px;height:200px;">
+          </div>
+          <button class="modal-btn" id="btnQrStart">刷新二维码</button>
+        </div>
+      </div>
+    </div>
 
     <div class="main-container">
       <!-- 左侧边栏 -->

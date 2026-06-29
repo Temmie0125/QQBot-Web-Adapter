@@ -12,6 +12,10 @@ import { fetchGroupInfo } from "../QQBot-Plugin/lib/groupInfo.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// 尝试加载 qrcode 包（QQBot-Plugin 已依赖）
+let QRCode
+try { QRCode = (await import("qrcode")).default } catch { QRCode = null }
+
 // WebAdapter 自身版本
 const WEB_ADAPTER_VERSION = "1.0.2"
 
@@ -312,6 +316,143 @@ setInterval(() => {
     if (now > entry.resetTime) rateLimitMap.delete(ip)
   }
 }, 60000)
+
+// ========== 添加 Bot 相关（AppID 登录 / 扫码登录） ==========
+const QQBot_ConfigFile = path.resolve(path.dirname(__dirname), "..", "config", "QQBot.yaml")
+
+// 扫码登录常量
+const QR_PORTAL_HOST = "q.qq.com"
+const QR_CREATE_PATH = "/lite/create_bind_task"
+const QR_POLL_PATH = "/lite/poll_bind_result"
+const QR_URL_TPL = "https://q.qq.com/qqbot/openclaw/connect.html?task_id={task_id}&_wv=2&source=windtrace"
+const QR_SHARE_INFO_URL = "https://qun.qq.com/cgi-bin/group_pro/robot/manager/share_info"
+const QR_BKN = 508459323
+const QR_HEADERS = { "Content-Type": "application/json", "User-Agent": "windtrace/1.0", "X-Source": "windtrace" }
+
+async function qrCreateBindTask() {
+  const key = crypto.randomBytes(32).toString("base64")
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 15000)
+  try {
+    const res = await fetch(`https://${QR_PORTAL_HOST}${QR_CREATE_PATH}`, {
+      method: "POST", headers: QR_HEADERS, body: JSON.stringify({ key }),
+      signal: ctrl.signal,
+    })
+    clearTimeout(timer)
+    const json = await res.json()
+    if (json.retcode !== 0) throw new Error(json.msg || "创建绑定任务失败")
+    return { taskId: json.data.task_id, key }
+  } catch (err) {
+    clearTimeout(timer)
+    throw err.name === "AbortError" ? new Error("创建二维码超时，QQ 接口无响应") : err
+  }
+}
+
+async function qrPollBindResult(taskId) {
+  const res = await fetch(`https://${QR_PORTAL_HOST}${QR_POLL_PATH}`, {
+    method: "POST", headers: QR_HEADERS, body: JSON.stringify({ task_id: taskId }),
+  })
+  const json = await res.json()
+  if (json.retcode !== 0) return { status: "waiting" }
+  if (json.data.status === 2) return { status: "ok", data: json.data }
+  if (json.data.status === 3) return { status: "timeout" }
+  return { status: "waiting" }
+}
+
+function qrDecryptSecret(cipherBase64, keyBase64) {
+  const buf = Buffer.from(cipherBase64, "base64")
+  const key = Buffer.from(keyBase64, "base64")
+  const nonce = buf.subarray(0, 12), tag = buf.subarray(-16), cipher = buf.subarray(12, -16)
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, nonce)
+  decipher.setAuthTag(tag)
+  return decipher.update(cipher, undefined, "utf8") + decipher.final("utf8")
+}
+
+async function qrGetRobotUin(appId) {
+  const res = await fetch(`${QR_SHARE_INFO_URL}?bkn=${QR_BKN}&robot_appid=${appId}`)
+  const json = await res.json()
+  return json?.data?.robot_data?.robot_uin
+}
+
+// 读取 QQBot 配置
+async function readQQBotConfig() {
+  try {
+    const raw = await fs.readFile(QQBot_ConfigFile, "utf8")
+    return YAML.parse(raw) || {}
+  } catch { return {} }
+}
+
+// 写入 QQBot 配置
+async function writeQQBotConfig(qqbotConfig) {
+  await fs.writeFile(QQBot_ConfigFile, YAML.stringify(qqbotConfig), "utf8")
+}
+
+// 保存 token 到 QQBot 配置并热连接（与 QQBot-Plugin 的 _saveAndConnectBot 逻辑一致）
+const _connectLocks = new Map()
+async function saveAndConnectBot(uin, appid, secret, connMode = "1", pdFlag = "0") {
+  const uinStr = String(uin)
+  // 防止同一 Bot 并发连接
+  if (_connectLocks.has(uinStr)) return await _connectLocks.get(uinStr)
+  let lockResolve
+  _connectLocks.set(uinStr, new Promise(r => { lockResolve = r }))
+
+  try {
+    const newToken = `${uinStr}:${appid}:default占位:${secret}:${connMode}:${pdFlag}`
+
+    const qqbotConfig = await readQQBotConfig()
+    if (!qqbotConfig.token) qqbotConfig.token = []
+
+    const idx = qqbotConfig.token.findIndex(t => t.split(":")[0] === uinStr)
+    if (idx >= 0) {
+      qqbotConfig.token[idx] = newToken
+    } else {
+      qqbotConfig.token.push(newToken)
+    }
+    await writeQQBotConfig(qqbotConfig)
+
+    // 热加载 Bot 实例
+    if (Bot[uinStr] && Bot[uinStr].sdk?.config) {
+      // 已有实例：不调用 connect()（会重建 Bot[id] 导致 LevelDB 文件锁冲突）
+      // 直接更新已存在的 config，用 sessionManager 重新连接
+      const sm = Bot[uinStr].sdk.sessionManager
+      if (sm) {
+        sm.userClose = true
+      }
+      try { Bot[uinStr].sdk.stop() } catch {}
+      await new Promise(r => setTimeout(r, 500))
+      // 更新 secret
+      Bot[uinStr].sdk.config.secret = secret
+      Bot[uinStr].info.secret = secret
+      if (sm) {
+        sm.tokenTask = null
+        if (sm.tokenTimer) { clearTimeout(sm.tokenTimer); sm.tokenTimer = null }
+        sm.wsUrl = null
+        sm.access_token = null
+        sm.fatalError = false
+        sm.userClose = false
+        sm.retry = 0
+        await sm.start()
+      }
+      logger.mark(`[QQBot-Web] Bot ${uinStr} 配置已更新并重新连接`)
+    } else {
+      // 新 Bot：调用 QQBot-Plugin 的 connect
+      const qqbotAdapter = Bot.adapter?.find(a => typeof a.connect === "function")
+      if (qqbotAdapter) {
+        await qqbotAdapter.connect(newToken)
+        await new Promise(r => setTimeout(r, 1000))
+      }
+      logger.mark(`[QQBot-Web] Bot ${uinStr} 已添加并连接`)
+    }
+
+    return { uin: uinStr, appid: String(appid), token: newToken, existed: idx >= 0 }
+  } catch (e) {
+    logger.debug(`[QQBot-Web] Bot ${uinStr} 热加载失败: ${e.message}，重启后生效`)
+    return { uin: uinStr, appid: String(appid), token: newToken, existed: false }
+  } finally {
+    _connectLocks.delete(uinStr)
+    lockResolve()
+  }
+}
 
 /** 解析 fastfetch 输出为结构化 HTML（参考 state-plugin） */
 function parseFastfetch(output) {
@@ -3676,6 +3817,106 @@ Bot.express.post(`${WEB_BASE}/api/config/save`, async (req, res) => {
     res.json({ ok: true, message: "配置已保存，重启后生效" })
   } catch (err) {
     logger.error("[QQBot-Web] 保存配置失败:", err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ========== 添加 Bot ==========
+
+const REDIS_QR_TASK_PREFIX = "wind-qr-task:"  // username → { taskId, key, createdAt }
+const QR_TASK_CACHE_TTL = 180                   // QR 任务缓存 3 分钟
+
+// 扫码登录 - 创建绑定任务（带 Redis 缓存，避免重复请求被拉黑 IP）
+Bot.express.post(`${WEB_BASE}/api/bot/add-qr-start`, async (req, res) => {
+  try {
+    const session = await getSession(req)
+    if (!session && config.login?.enabled !== false) return res.status(401).json({ error: "未登录" })
+    const forceRefresh = req.body?.refresh === true
+
+    // 强制刷新时删除缓存
+    if (forceRefresh) {
+      try { await redis.del(`${REDIS_QR_TASK_PREFIX}${session.username}`) } catch {}
+    }
+
+    // 检查缓存
+    if (!forceRefresh) {
+      try {
+        const cached = await redis.get(`${REDIS_QR_TASK_PREFIX}${session.username}`)
+        if (cached) {
+          const parsed = JSON.parse(cached)
+          const qrUrl = QR_URL_TPL.replace("{task_id}", parsed.taskId)
+          const qrImage = parsed.qrImage || null
+          return res.json({ ok: true, taskId: parsed.taskId, key: parsed.key, qrUrl, qrImage, cached: true })
+        }
+      } catch {}
+    }
+
+    const { taskId, key } = await qrCreateBindTask()
+    const qrUrl = QR_URL_TPL.replace("{task_id}", taskId)
+
+    // 生成真实二维码图片
+    let qrImage = null
+    try {
+      if (QRCode) {
+        qrImage = await QRCode.toDataURL(qrUrl, { width: 200, margin: 2 })
+      }
+    } catch {}
+
+    // 缓存到 Redis（3 分钟，含 qrImage）
+    try {
+      await redis.setEx(`${REDIS_QR_TASK_PREFIX}${session.username}`, QR_TASK_CACHE_TTL,
+        JSON.stringify({ taskId, key, qrImage }))
+    } catch {}
+
+    res.json({ ok: true, taskId, key, qrUrl, qrImage })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 扫码登录 - 轮询结果（单次检查，前端 2s 轮询）
+Bot.express.post(`${WEB_BASE}/api/bot/add-qr-poll`, async (req, res) => {
+  try {
+    const session = await getSession(req)
+    if (!session && config.login?.enabled !== false) return res.status(401).json({ error: "未登录" })
+    const { taskId, key } = req.body || {}
+    if (!taskId || !key) return res.status(400).json({ error: "缺少 taskId 或 key" })
+    const result = await qrPollBindResult(taskId)
+    if (result.status === "timeout") {
+      try { await redis.del(`${REDIS_QR_TASK_PREFIX}${session.username}`) } catch {}
+      return res.json({ status: "timeout" })
+    }
+    if (result.status !== "ok") return res.json({ status: "waiting" })
+    const secret = qrDecryptSecret(result.data.bot_encrypt_secret, key)
+    const uin = await qrGetRobotUin(result.data.bot_appid)
+    if (!uin) return res.status(500).json({ error: "获取机器人 uin 失败" })
+    // 扫码成功 → 删除缓存
+    try { await redis.del(`${REDIS_QR_TASK_PREFIX}${session.username}`) } catch {}
+    const { uin: uinStr, appid, existed } = await saveAndConnectBot(uin, result.data.bot_appid, secret, "1", "0")
+    res.json({ status: "ok", uin: uinStr, appid, existed })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// AppID 登录 - 通过 appid+secret 添加 Bot
+Bot.express.post(`${WEB_BASE}/api/bot/add-by-appid`, async (req, res) => {
+  try {
+    const session = await getSession(req)
+    if (!session && config.login?.enabled !== false) return res.status(401).json({ error: "未登录" })
+    const { appid, secret, mode, privateDomain } = req.body || {}
+    if (!appid || !secret) return res.status(400).json({ error: "缺少 appid 或 secret" })
+
+    // 通过 share_info 接口获取机器人 uin
+    const uin = await qrGetRobotUin(appid)
+    if (!uin) return res.status(400).json({ error: "无法获取机器人信息，请确认 AppID 正确" })
+
+    // 组装 token
+    const connMode = mode === "webhook" ? "2" : "1"
+    const pdFlag = privateDomain ? "1" : "0"
+    const result = await saveAndConnectBot(uin, appid, secret, connMode, pdFlag)
+    res.json({ ok: true, ...result })
+  } catch (err) {
     res.status(500).json({ error: String(err) })
   }
 })
