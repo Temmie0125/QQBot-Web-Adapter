@@ -21,10 +21,11 @@
 - **在线配置** — 通过面板修改配置，敏感改动需验证码
 - **角色显示** — 群消息显示群主/管理员身份徽章
 - **黑名单管理** — 可以直接在线添加/删除黑名单用户
+- **登录bot** — 可以直接在web端使用appid登录bot或者通过扫码登录bot
 
 ## 安装
 
-在 Yunzai 的根目录下执行以下命令即可安装本插件：
+在 Yunzai 的根目录下执行以下命令安装本插件：
 
 #### Gitee 链接（当前安装需要登录）：
 ```bash
@@ -35,6 +36,11 @@ git clone https://gitee.com/wind-trace-typ/QQBot-Web-Adapter.git ./plugins/QQBot
 git clone https://gitcode.com/wind-trace/QQBot-Web-Adapter.git ./plugins/QQBot-Web-Adapter
 ```
 
+在 Yunzai 的根目录下执行以下命令安装本插件所需要的依赖：
+```bash
+pnpm i
+```
+
 ## 依赖
 
 | 依赖 | 说明 |
@@ -43,6 +49,7 @@ git clone https://gitcode.com/wind-trace/QQBot-Web-Adapter.git ./plugins/QQBot-W
 | **Redis** | 由 Yunzai 提供，用于消息存储（默认后端）与 Session 管理 |
 | **SQLite3** | 由 Yunzai 提供，可选存储后端，无需额外服务，数据存于 `data/db/messages.db` |
 | **fastfetch** | 用于获取系统信息（非刚需，自行决定是否安装） |
+| **qrcode** | 用于扫码登录显示二维码（非刚需） |
 
 > 本插件无需单独安装 npm 依赖，复用 Yunzai 框架已有的 express、yaml、redis、sequelize、sqlite3 等包。
 
