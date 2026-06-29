@@ -2106,9 +2106,9 @@ function getNoticeText(m) {
     case "decrease":
       return `@${nick} 退群了`
     case "add":
-      return botNick ? `@${nick} 邀请 ${botNick} 加入了群聊` : `@${nick} 加入了群聊`
+      return `@${nick} 邀请 ${botNick || "机器人"} 加入了群聊`
     case "del":
-      return botNick ? `@${nick} 将 ${botNick} 移出了群聊` : `@${nick} 退出了群聊`
+      return `@${nick} 将 ${botNick || "机器人"} 移出了群聊`
     default:
       return `@${nick}`
   }

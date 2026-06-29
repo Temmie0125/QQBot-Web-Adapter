@@ -1922,6 +1922,36 @@ Bot.express.get(`${WEB_BASE}/favicon.ico`, (req, res) => {
 // 频率限制中间件（在鉴权之前）
 Bot.express.use(`${WEB_BASE}/api`, rateLimitMiddleware(RATELIMIT_MAX, RATELIMIT_LOGIN_MAX))
 
+// 安全响应头中间件（所有请求）
+Bot.express.use(`${WEB_BASE}`, (req, res, next) => {
+  res.set({
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "X-XSS-Protection": "1; mode=block",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  })
+  next()
+})
+
+// API 响应：禁止缓存 + 错误信息脱敏
+Bot.express.use(`${WEB_BASE}/api`, (req, res, next) => {
+  // 禁止缓存敏感 API 响应
+  res.set("Cache-Control", "no-cache, no-store, must-revalidate")
+  res.set("Pragma", "no-cache")
+
+  // 包装 res.json 对 500 错误脱敏
+  const origJson = res.json.bind(res)
+  res.json = function (body) {
+    if (res.statusCode === 500 && body && typeof body.error === "string" && body.error) {
+      logger.debug(`[QQBot-Web] API 内部错误 (${req.method} ${req.path}):`, body.error)
+      body = { ...body, error: "服务器内部错误，请查看日志" }
+    }
+    return origJson(body)
+  }
+  next()
+})
+
 // 鉴权中间件（在静态文件之前）
 Bot.express.use(`${WEB_BASE}`, async (req, res, next) => {
   const relativePath = req.path
@@ -1951,10 +1981,28 @@ Bot.express.use(`${WEB_BASE}`, async (req, res, next) => {
 // ========== 媒体文件端点（鉴权之后，<img> 同源请求自动带 cookie） ==========
 
 // 图片代理（QQ CDN → 本地反代，避免防盗链）
+// 仅允许白名单内的 QQ CDN 域名，防止 SSRF
+const IMAGE_PROXY_ALLOWED_HOSTS = [
+  "gchat.qpic.cn", "c2cpicdw.qpic.cn", "chat.qpic.cn",
+  "multimedia.nt.qq.com.cn", "multimedia.nt.qq.com",
+  "groupprohead.gtimg.cn", "thirdqq.qlogo.cn", "qlogo.cn",
+  "qpic.cn", "qq.com", "gtimg.cn", "qlogo.cn",
+]
 Bot.express.get(`${WEB_BASE}/api/bot/:selfId/image-proxy`, async (req, res) => {
   try {
     const url = req.query.url
     if (!url) return res.status(400).end("missing url")
+
+    // SSRF 防护：检查 URL 域名是否在白名单内
+    let parsedUrl
+    try {
+      parsedUrl = new URL(url)
+    } catch {
+      return res.status(400).end("invalid url")
+    }
+    const hostname = parsedUrl.hostname.toLowerCase()
+    const allowed = IMAGE_PROXY_ALLOWED_HOSTS.some(h => hostname === h || hostname.endsWith("." + h))
+    if (!allowed) return res.status(403).end("host not allowed")
 
     const buf = await Bot.Buffer(url, { http: true })
     let contentType = "image/jpeg"
@@ -2083,6 +2131,11 @@ Bot.express.post(`${WEB_BASE}/api/login`, async (req, res) => {
       if (!captchaOk) {
         return res.status(401).json({ error: "验证码错误或已过期，请重新获取", requireCaptcha: true })
       }
+      // 验证通过立即删除验证码，防止重用
+      try {
+        await redis.del(`${REDIS_CAPTCHA_PREFIX}${ip}`)
+        await redis.del(`${REDIS_CAPTCHA_TIME_PREFIX}${ip}`)
+      } catch {}
     }
 
     // 校验用户名密码
@@ -2126,6 +2179,7 @@ Bot.express.post(`${WEB_BASE}/api/login`, async (req, res) => {
     await setSession(token, username)
     res.cookie("qqbot_session", token, {
       httpOnly: true,
+      secure: req.secure || req.protocol === "https",
       sameSite: "lax",
       maxAge: SESSION_TTL * 1000,
       path: "/",
@@ -2133,6 +2187,7 @@ Bot.express.post(`${WEB_BASE}/api/login`, async (req, res) => {
     // 设备 Cookie（1年有效期）
     res.cookie(DEVICE_COOKIE, deviceId, {
       httpOnly: true,
+      secure: req.secure || req.protocol === "https",
       sameSite: "lax",
       maxAge: DEVICE_TTL * 1000,
       path: "/",
@@ -3033,6 +3088,8 @@ let prevProcessCpuTime = 0
 
 Bot.express.get(`${WEB_BASE}/api/system-info`, async (req, res) => {
   try {
+    const session = await getSession(req)
+    if (!session && config.login?.enabled !== false) return res.status(401).json({ error: "未登录" })
     const cpus = os.cpus()
     const cpuModel = cpus[0]?.model || "Unknown"
     const cpuCores = cpus.length
@@ -3328,8 +3385,10 @@ async function calcDirSize(dirPath) {
 // ========== 配置管理 ==========
 
 // 获取当前配置（密码脱敏）
-Bot.express.get(`${WEB_BASE}/api/config`, (req, res) => {
+Bot.express.get(`${WEB_BASE}/api/config`, async (req, res) => {
   try {
+    const session = await getSession(req)
+    if (!session && config.login?.enabled !== false) return res.status(401).json({ error: "未登录" })
     const safe = {
       basePath: config.basePath,
       autoRecordMessage: config.autoRecordMessage !== false,
