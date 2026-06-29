@@ -3428,6 +3428,13 @@ Bot.express.post(`${WEB_BASE}/api/config/send-code`, async (req, res) => {
       return res.status(403).json({ error: "今日验证码重试次数已用完，请明天再试" })
     }
 
+    // 检查发送冷却（60秒内不能重复获取）
+    const cooldownKey = `wind-config-code-cooldown:${session.username}`
+    const cooldownRemaining = await redis.ttl(cooldownKey)
+    if (cooldownRemaining > 0) {
+      return res.status(429).json({ error: `请等待 ${cooldownRemaining} 秒后再获取验证码`, cooldown: cooldownRemaining })
+    }
+
     // 生成32位字母数字混合验证码
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
     let code = ''
@@ -3438,6 +3445,8 @@ Bot.express.post(`${WEB_BASE}/api/config/send-code`, async (req, res) => {
     // 存到 Redis，3分钟过期
     const codeKey = `wind-config-code:${session.username}`
     await redis.setEx(codeKey, 180, code)
+    // 发送冷却 60 秒
+    await redis.setEx(cooldownKey, 60, "1")
 
     // 输出到日志（加粗醒目）
     logger.mark(`[QQBot-Web] ========================================`)
