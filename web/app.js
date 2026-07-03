@@ -6094,6 +6094,7 @@ async function loadSettings() {
     $("#setUsername").value = cfg.login.username || ""
     $("#setPassword").value = cfg.login.password || ""
     $("#setNotifyUserId").value = cfg.notifyUserId || ""
+    $("#setPublicAccess").checked = cfg.publicAccess === true
     $("#setEnableQuanliangCommands").checked = cfg.enableQuanliangCommands !== false
     $("#setHttpLogSilent").checked = cfg.httpLogSilent === true
     const napcatEnabled = cfg.napcatEnabled === true
@@ -6134,6 +6135,7 @@ function getCurrentSettings() {
       password: $("#setPassword").value,
     },
     notifyUserId: $("#setNotifyUserId").value.trim(),
+    publicAccess: $("#setPublicAccess").checked,
     enableQuanliangCommands: $("#setEnableQuanliangCommands").checked,
     httpLogSilent: $("#setHttpLogSilent").checked,
     napcatEnabled: $("#setNapcatEnabled").checked,
@@ -6176,6 +6178,7 @@ function checkSettingsChanged() {
     cur.notifyUserId !== (orig.notifyUserId || "") ||
     cur.enableQuanliangCommands !== orig.enableQuanliangCommands ||
     cur.httpLogSilent !== (orig.httpLogSilent === true) ||
+    cur.publicAccess !== (orig.publicAccess === true) ||
     cur.napcatEnabled !== orig.napcatEnabled ||
     cur.napcatHost !== (orig.napcatHost || "") ||
     cur.napcatPort !== (orig.napcatPort || 3000) ||
@@ -6192,7 +6195,7 @@ function setupSettingsListeners() {
     const el = $("#" + id)
     if (el) el.addEventListener("input", checkSettingsChanged)
   }
-  for (const id of ["setLoginEnabled", "setAutoRecordMessage", "setAutoDownloadImgorVideo", "setEnableQuanliangCommands", "setHttpLogSilent"]) {
+  for (const id of ["setLoginEnabled", "setAutoRecordMessage", "setAutoDownloadImgorVideo", "setEnableQuanliangCommands", "setHttpLogSilent", "setPublicAccess"]) {
     const toggle = $("#" + id)
     if (toggle) toggle.addEventListener("change", checkSettingsChanged)
   }
@@ -6249,6 +6252,7 @@ function flattenPayload(cur, orig) {
   if (!orig || cur.notifyUserId !== (orig.notifyUserId || "")) payload.notifyUserId = cur.notifyUserId
   if (!orig || cur.enableQuanliangCommands !== orig.enableQuanliangCommands) payload.enableQuanliangCommands = cur.enableQuanliangCommands
   if (!orig || cur.httpLogSilent !== (orig.httpLogSilent === true)) payload.httpLogSilent = cur.httpLogSilent
+  if (!orig || cur.publicAccess !== (orig.publicAccess === true)) payload.publicAccess = cur.publicAccess
   if (!orig || cur.napcatEnabled !== orig.napcatEnabled) payload.napcatEnabled = cur.napcatEnabled
   if (!orig || cur.napcatHost !== (orig.napcatHost || "")) payload.napcatHost = cur.napcatHost
   if (!orig || cur.napcatPort !== (orig.napcatPort || 3000)) payload.napcatPort = cur.napcatPort

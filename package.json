@@ -2,6 +2,8 @@
   "name": "QQBot-Web-Adapter",
   "type": "module",
   "dependencies": {
+    "geoip-lite": "^1.4.10",
+    "ip-geo-cn": "^1.0.1",
     "qrcode": "^1.5.4"
   }
 }

@@ -6,6 +6,7 @@ import crypto from "node:crypto"
 import { execSync, exec as execCb } from "node:child_process"
 import { promisify } from "node:util"
 import { fileURLToPath } from 'url'
+import { createRequire } from "node:module"
 import express from "express"
 import { isGroupBlacklisted, isUserBlacklisted, blacklistGroup as blGroup, unblacklistGroup as unblGroup, blacklistUser as blUser, unblacklistUser as unblUser, getBlacklistData } from "../QQBot-Plugin/lib/blacklist.js"
 import { fetchGroupInfo } from "../QQBot-Plugin/lib/groupInfo.js"
@@ -15,6 +16,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // 尝试加载 qrcode 包（QQBot-Plugin 已依赖）
 let QRCode
 try { QRCode = (await import("qrcode")).default } catch { QRCode = null }
+
+// IP 归属地：ip-geo-cn（纯真，IPv4 中国省市最优）+ geoip-lite（IPv6 兜底）
+let qqwry, geoip
+try { qqwry = new (createRequire(import.meta.url)("ip-geo-cn"))() } catch { qqwry = null }
+try { geoip = (await import("geoip-lite")).default } catch { geoip = null }
 
 // WebAdapter 自身版本
 const WEB_ADAPTER_VERSION = "1.0.2"
@@ -38,6 +44,7 @@ const DEFAULT_CONFIG = {
   notifyUserId: "",
   enableQuanliangCommands: true,
   httpLogSilent: false,
+  publicAccess: true,
   napcatEnabled: false,
   napcatHost: "127.0.0.1",
   napcatPort: 3000,
@@ -281,6 +288,105 @@ function getClientIp(req) {
          req.headers["x-real-ip"] ||
          req.socket?.remoteAddress ||
          "127.0.0.1"
+}
+
+// 判断是否为内网/本机 IP（支持 IPv4 + IPv6）
+function isPrivateIp(ip) {
+  if (!ip) return true
+  // 移除 IPv4-mapped IPv6 前缀 ::ffff:
+  const s = ip.replace(/^::ffff:/, "")
+  // IPv4 回环 & 私有段
+  if (s === "127.0.0.1" || s === "localhost") return true
+  if (s.startsWith("10.") || s.startsWith("192.168.")) return true
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(s)) return true
+  // IPv6 回环 & 私有段
+  if (s === "::1") return true
+  if (/^f[cde][0-9a-f]{0,2}:/i.test(s)) return true  // fc00::/7 (ULA) + fe80::/10 (link-local)
+  return false
+}
+
+// 国家代码 → 中文名（geoip-lite 返回英文代码）
+const _COUNTRY_CN = {
+  CN: "中国", HK: "中国香港", TW: "中国台湾", MO: "中国澳门",
+  US: "美国", JP: "日本", KR: "韩国", SG: "新加坡",
+  GB: "英国", DE: "德国", FR: "法国", CA: "加拿大",
+  AU: "澳大利亚", RU: "俄罗斯", IN: "印度", TH: "泰国",
+  VN: "越南", MY: "马来西亚", PH: "菲律宾", ID: "印度尼西亚",
+}
+const _countryCN = (code) => _COUNTRY_CN[code] || code || ""
+
+// IP 归属地查询（IPv4: ip-geo-cn 纯真库, IPv6: geoip-lite + 前缀识别）
+async function getIpRegion(ip) {
+  if (!ip) return "未知地区"
+  if (isPrivateIp(ip)) return "局域网"
+  try {
+    const s = ip.replace(/^::ffff:/, "")
+    const isV6 = s.includes(":")
+    if (!isV6 && qqwry) {
+      // IPv4: 纯真数据库（中国省市 ISP 精度最优）
+      const r = qqwry.searchIP(s)
+      if (r?.Country) {
+        const parts = [r.Country]
+        if (r.Area && r.Area !== r.Country) parts.push(r.Area)
+        return parts.join(" ") || "未知地区"
+      }
+    }
+    // IPv6 或无纯真数据时：geoip-lite + 前缀识别
+    if (!geoip) return isV6 ? (guessIPv6ISP(s) || "未知地区") : "未知地区"
+    const geo = geoip.lookup(s)
+    if (!geo?.country) return isV6 ? (guessIPv6ISP(s) || "未知地区") : "未知地区"
+    const country = _countryCN(geo.country)
+    const parts = [country]
+    if (geo.region) parts.push(geo.region)
+    if (geo.city && geo.city !== geo.region) parts.push(geo.city)
+    const region = parts.filter(Boolean).join(" ")
+    if (!geo.region && isV6) {
+      const isp = guessIPv6ISP(s)
+      if (isp && isp !== country) return isp
+    }
+    return region || "未知地区"
+  } catch {}
+  return "未知地区"
+}
+
+// IPv6 前缀 → 运营商（中国常见前缀，中国移动/电信/联通在 2409::/16 内有不同分配）
+function guessIPv6ISP(ip) {
+  if (/^240e/i.test(ip)) return "中国 电信"
+  if (/^2408/i.test(ip)) return "中国 联通"
+  if (/^2409:8[0-8]/i.test(ip)) return "中国 移动"
+  if (/^2409:8a/i.test(ip)) return "中国 移动"
+  if (/^2409:9/i.test(ip)) return "中国 移动"
+  if (/^2409:89/i.test(ip)) return "中国 电信"
+  if (/^2001:da8/i.test(ip)) return "中国 教育网"
+  if (/^240[0-9a-f]:/i.test(ip)) return "中国"
+  return ""
+}
+
+// 登录失败通知（达到阈值时向 notifyUserId 推送）
+async function notifyLoginFailure(ip, username, attemptCount) {
+  const notifyId = config.notifyUserId?.trim()
+  if (!notifyId) return
+  try {
+    let targetBotId = null
+    let resolvedUserId = notifyId
+    if (Bot.uin?.length > 0) {
+      for (const id of Bot.uin) {
+        if (!Bot[id]?.adapter) continue
+        if (Bot[id].fl?.has?.(notifyId)) { targetBotId = id; break }
+        const sep = Bot[id].adapter.sep
+        if (sep) {
+          const lookupKey = `${id}${sep}${notifyId}`
+          if (Bot[id].fl?.has?.(lookupKey)) { targetBotId = id; resolvedUserId = lookupKey; break }
+        }
+      }
+    }
+    if (targetBotId) {
+      const region = await getIpRegion(ip)
+      const time = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })
+      const msg = `【登录失败提醒】\n用户名：${username}\nIP：${ip}\n地区：${region}\n失败次数：${attemptCount}/${LOGIN_FAIL_THRESHOLD}\n时间：${time}`
+      await Bot.sendFriendMsg(targetBotId, resolvedUserId, msg)
+    }
+  } catch {}
 }
 
 // ========== API 频率限制（内存） ==========
@@ -2075,6 +2181,18 @@ Bot.express.use(`${WEB_BASE}`, (req, res, next) => {
   next()
 })
 
+// 公网访问控制中间件（仅在内网模式下拦截非内网 IP）
+Bot.express.use(`${WEB_BASE}`, (req, res, next) => {
+  if (config.publicAccess === true) return next()
+  // 放行 health 检查
+  if (req.path === "/api/health") return next()
+  const ip = getClientIp(req)
+  if (!isPrivateIp(ip)) {
+    return res.status(403).json({ error: "公网访问已关闭，请通过内网访问控制台" })
+  }
+  next()
+})
+
 // API 响应：禁止缓存 + 错误信息脱敏
 Bot.express.use(`${WEB_BASE}/api`, (req, res, next) => {
   // 禁止缓存敏感 API 响应
@@ -2285,6 +2403,10 @@ Bot.express.post(`${WEB_BASE}/api/login`, async (req, res) => {
       try {
         const newCount = await redis.incr(`${REDIS_ATTEMPTS_PREFIX}${deviceKey}`)
         await redis.expire(`${REDIS_ATTEMPTS_PREFIX}${deviceKey}`, LOGIN_ATTEMPTS_TTL)
+        // 第 3 次失败时推送通知
+        if (newCount === 3 || newCount === 4 || newCount === LOGIN_FAIL_THRESHOLD) {
+          notifyLoginFailure(ip, username, newCount)
+        }
         if (newCount >= LOGIN_FAIL_THRESHOLD) {
           // 设备级永久封禁
           await redis.set(`${REDIS_BLOCKED_PREFIX}${deviceKey}`, "1")
@@ -3542,6 +3664,7 @@ Bot.express.get(`${WEB_BASE}/api/config`, async (req, res) => {
         password: config.login.password ? "••••••••" : "",
       },
       notifyUserId: config.notifyUserId || "",
+      publicAccess: config.publicAccess === true,
       storageBackend: config.storageBackend === "sqlite" ? "sqlite" : "redis",
       enableQuanliangCommands: config.enableQuanliangCommands !== false,
       httpLogSilent: !!config.httpLogSilent,
@@ -3613,7 +3736,7 @@ Bot.express.post(`${WEB_BASE}/api/config/save`, async (req, res) => {
     const session = await getSession(req)
     if (!session) return res.status(401).json({ error: "未登录" })
 
-    const { basePath, username, password, code, autoRecordMessage, autoDownloadImgorVideo, maxMediaCacheSize, saveTimes, storageBackend, loginEnabled, notifyUserId, enableQuanliangCommands, httpLogSilent, napcatEnabled, napcatHost, napcatPort, napcatToken } = req.body || {}
+    const { basePath, username, password, code, autoRecordMessage, autoDownloadImgorVideo, maxMediaCacheSize, saveTimes, storageBackend, loginEnabled, notifyUserId, publicAccess, enableQuanliangCommands, httpLogSilent, napcatEnabled, napcatHost, napcatPort, napcatToken } = req.body || {}
 
     // 检查今天是否已被封禁
     const blockKey = `wind-config-blocked:${session.username}`
@@ -3713,6 +3836,7 @@ Bot.express.post(`${WEB_BASE}/api/config/save`, async (req, res) => {
         Bot.express.quiet = Bot.express.quiet.filter(p => !qp.includes(p))
       }
     }
+    if (publicAccess !== undefined) config.publicAccess = !!publicAccess
 
     // 同步到 Bot 全局
     Bot.napcatEnabled = config.napcatEnabled === true
@@ -3783,6 +3907,7 @@ Bot.express.post(`${WEB_BASE}/api/config/save`, async (req, res) => {
         ]
         const security = [
           `通知用户ID: ${config.notifyUserId || "已清除"}${mark(notifyUserId !== undefined)}`,
+          `公网访问: ${config.publicAccess ? "已开启" : "已关闭"}${mark(publicAccess !== undefined)}`,
         ]
         const other = [
           `全量群指令开关: ${config.enableQuanliangCommands ? "已启用" : "已关闭"}${mark(enableQuanliangCommands !== undefined)}`,
@@ -3800,7 +3925,9 @@ Bot.express.post(`${WEB_BASE}/api/config/save`, async (req, res) => {
         if (other.some(Boolean)) parts.push("【其他设置】\n" + other.join("\n"))
         if (napcat.some(Boolean)) parts.push("【Napcat 连接设置】\n" + napcat.join("\n"))
         const changeDesc = parts.length > 0 ? parts.join("\n\n") : "配置已更新"
-        const finalMsg = `QQBot 控制台设置变更通知\n\n${changeDesc}\n\n操作人: ${session.username}`
+        const opIp = getClientIp(req)
+        const opRegion = await getIpRegion(opIp)
+        const finalMsg = `QQBot 控制台设置变更通知\n\n${changeDesc}\n\n操作人: ${session.username}\nIP: ${opIp}\n地区: ${opRegion}`
         if (targetBotId) {
           // 走 Bot.sendFriendMsg 正规链路：pickFriend → sendMsg → sendFriendMsg → sendMsg → _saveSentMessage
           // 确保消息写入 Redis 聊天记录

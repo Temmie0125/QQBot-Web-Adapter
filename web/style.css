@@ -2094,6 +2094,12 @@ body {
   opacity: 1;
 }
 
+.settings-static-text {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 6px 0;
+}
+
 .settings-actions {
   margin-top: 32px;
   display: flex; align-items: center; gap: 14px;

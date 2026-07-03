@@ -534,6 +534,17 @@
               <label class="settings-label">设置变动通知<span class="settings-help" data-tip="此设置存在变动时会自动通知此ID对应的用户。需在开放平台将用户加入私信沙箱，且该用户必须已添加机器人。OpenID获取方法：消息记录中点击用户头像弹出信息弹窗，复制OpenID填入此处">?</span></label>
               <input type="text" class="settings-input" id="setNotifyUserId" placeholder="填写需要通知的用户 OpenID / UserID">
             </div>
+            <div class="settings-group">
+              <label class="settings-label">公网访问开关<span class="settings-help" data-tip="关闭后仅允许内网/本机 IP 访问控制台和 API，公网请求将被拦截（返回 403）。开启后不限制来源 IP。默认开启。此设置即时生效，无需重启">?</span></label>
+              <label class="settings-switch">
+                <input type="checkbox" id="setPublicAccess">
+                <span class="settings-switch-slider"></span>
+              </label>
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">登录失败通知<span class="settings-help" data-tip="当同一设备登录失败达到 3 次时，向通知用户ID推送包含请求 IP 和归属地的告警信息。仅在设置了通知用户ID后生效">?</span></label>
+              <span class="settings-static-text">3 次失败自动推送（需设置通知用户ID）</span>
+            </div>
 
             <!-- 其他设置 -->
             <div class="settings-section">其他设置</div>
