@@ -2185,6 +2185,12 @@ function renderMessages(messages, position = "beforeend") {
     const blUserBadge = (!isSelf && !m.is_notice && checkUserBlacklisted(extractOpenidFromMessage(m), m.unionid || ""))
       ? '<span class="blacklist-badge">拉黑</span>' : ""
 
+    // 转发消息（聊天记录）特殊处理：渲染折叠卡片
+    if (isForwardMessage(m)) {
+      fragment.appendChild(buildForwardCard(m))
+      continue
+    }
+
     // 撤回状态
     const recalled = m.recalled
     if (recalled) div.classList.add("msg-recalled")
@@ -3296,6 +3302,200 @@ async function handleContextAction(action) {
   }
 }
 
+// ===== 转发消息（聊天记录）解析与渲染 =====
+function isForwardMessage(m) {
+  const content = m.raw_event?.d?.content || (typeof m.raw_message === "string" ? m.raw_message : "")
+  return typeof content === "string" && content.includes("聊天记录") && /===+\s*消息\s*\d+\s*===+/i.test(content)
+}
+
+// 将原始 [群聊的聊天记录]...\n=== 消息 N ===\n[消息内容]...\n[发送者]... 解析为结构化数组
+// QQ 视频下载链接默认带 format=origin&orgfmt=t265（H.265），浏览器无法解码；
+// 去掉这两个参数后服务端会返回可内联播放的 H.264 版本
+function normalizeQQVideoUrl(url) {
+  try {
+    const u = new URL(url)
+    u.searchParams.delete("format")
+    u.searchParams.delete("orgfmt")
+    return u.toString()
+  } catch {
+    return url
+  }
+}
+
+function parseForwardMessages(content) {
+  const blocks = content.split(/===+\s*消息\s*\d+\s*===+/i)
+  const messages = []
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i]
+    if (!block || !block.trim()) continue
+    const senderM = block.match(/\[发送者\]\s*([^\n]*)/)
+    const sender = senderM ? senderM[1].trim() : "未知"
+    const attachments = []
+    const attRe = /\[附件\d+\]\s*类型:(\S+)(?:\s*文件名:(\S+))?(?:\s*尺寸:(\S+))?(?:\s*大小:(\S+))?\s*URL:(\S+)/g
+    let am
+    while ((am = attRe.exec(block)) !== null) {
+      const type = am[1]
+      const filename = am[2] || ""
+      const url = am[5] || ""
+      if (!url) continue
+      if (type === "图片") attachments.push({ content_type: "image/jpeg", url, filename })
+      else if (type === "视频") attachments.push({ content_type: "video/mp4", url: normalizeQQVideoUrl(url), filename })
+      else attachments.push({ content_type: "application/octet-stream", url, filename })
+    }
+    const cM = block.match(/\[消息内容\]\s*([\s\S]*?)(?=\n\[发送者\]|\n\[附件\d+\]|$|$)/)
+    const text = cM ? cM[1].trim() : ""
+    messages.push({ sender, text, attachments })
+  }
+  return messages
+}
+
+// 渲染 QQ face 标签（<face... ext="base64">）：解码 ext 取文本，失败回退 [表情]
+function renderForwardFaceTag(ext) {
+  if (ext) {
+    try {
+      const b64 = ext.replace(/-/g, "+").replace(/_/g, "/")
+      const bin = atob(b64)
+      const bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      const json = JSON.parse(new TextDecoder().decode(bytes))
+      if (json && json.text) return `<span class="fwd-face" title="${escHtml(json.text)}">${escHtml(json.text)}</span>`
+      // 文本为空（图片表情/贴纸）→ 直接过滤掉，真实内容由附件图片呈现
+      return ""
+    } catch {}
+  }
+  return `<span class="fwd-face" title="表情">[表情]</span>`
+}
+
+// 渲染单条转发消息的内容（文本 + 表情 + 附件）
+function renderForwardContent(text, attachments) {
+  let html = ""
+  if (text) {
+    let t = text
+    // 带 ext 的表情：解码后文本为空（图片表情/贴纸）则丢弃，否则渲染文本
+    t = t.replace(/<face[^>]*ext="([^"]*)"[^>]*>/gi, (_, ext) => renderForwardFaceTag(ext || ""))
+    // 其余无 ext 的残留 <face...> 标签直接丢弃
+    t = t.replace(/<face[^>]*>/gi, "")
+    t = t.trim()
+    t = escHtml(t).replace(/\n/g, "<br>")
+    if (t) html += `<div class="fwd-msg-text">${t}</div>`
+  }
+  for (const att of attachments) {
+    html += renderAttachment(att, false, "")
+  }
+  return html
+}
+
+// 折叠卡片预览：取前 1~2 条，超长截断；图片/表情包显示为占位符
+function buildForwardPreview(messages) {
+  const lines = []
+  for (const msg of messages.slice(0, 2)) {
+    // 先去掉 face 标签并清理空白，避免原始 <face...> 文本泄露
+    const cleanText = msg.text.replace(/<face[^>]*>/gi, "").trim()
+    let preview
+    if (cleanText) {
+      preview = cleanText.replace(/\n/g, " ").slice(0, 44)
+    } else {
+      const hasFace = /<face[^>]*>/i.test(msg.text)
+      const hasImage = msg.attachments.some(a => a.content_type.startsWith("image/"))
+      const hasVideo = msg.attachments.some(a => a.content_type.startsWith("video/"))
+      // 表情包（face 占位）优先于图片附件，因为贴纸也是以图片形式下发
+      if (hasFace) preview = "[动画表情]"
+      else if (hasImage) preview = "[图片]"
+      else if (hasVideo) preview = "[视频]"
+      else if (msg.attachments.length) preview = "[文件]"
+      else preview = "[空]"
+    }
+    lines.push(`${msg.sender}: ${preview}`)
+  }
+  return lines
+}
+
+// 构建消息列表中的转发折叠卡片（复用外层消息的发送者头像/昵称）
+function buildForwardCard(m) {
+  const content = m.raw_event?.d?.content || (typeof m.raw_message === "string" ? m.raw_message : "")
+  const msgs = parseForwardMessages(content)
+  const count = msgs.length
+  const isSelf = m.me
+  const isBot = m.me || m.is_bot
+  const div = document.createElement("div")
+  div.className = `msg-item ${isSelf ? "msg-self" : ""} ${!isSelf && m.is_bot ? "is-bot" : ""}`
+  div.dataset.msgIdx = m.msg_idx || ""
+  div.dataset.messageId = m.message_id || ""
+  div.dataset.timestamp = m.timestamp || ""
+  div.dataset.userId = m.user_id || ""
+  const avatarSrc = m.avatar || ""
+  const nickname = escHtml(m.nickname || m.user_id || "未知")
+  const time = formatTime(m.timestamp)
+  const roleBadge = getRoleBadgeHtml(m.sender?.role)
+  const botMark = isBot ? ' <span style="font-size:10px;color:var(--success)">[Bot]</span>' : ""
+  const blUserBadge = (!isSelf && !m.is_notice && checkUserBlacklisted(extractOpenidFromMessage(m), m.unionid || ""))
+    ? '<span class="blacklist-badge">拉黑</span>' : ""
+  const previewLines = buildForwardPreview(msgs)
+  const previewHtml = previewLines.map(l => escHtml(l)).join("<br>")
+  div.innerHTML = `
+    <img class="msg-avatar" src="${avatarSrc}" alt="" onerror="this.style.display='none'">
+    <div class="msg-body">
+      <div class="msg-sender">${blUserBadge}${nickname}${roleBadge} <span class="msg-time-inline">${time}</span>${botMark}</div>
+      <div class="msg-bubble-row">
+        <div class="msg-bubble fwd-bubble">
+          <div class="fwd-title">聊天记录</div>
+          <div class="fwd-preview">${previewHtml}</div>
+          <div class="fwd-count">共 ${count} 条</div>
+        </div>
+      </div>
+    </div>
+  `
+  // 点击气泡 → 打开转发详情弹窗
+  const bubble = div.querySelector(".fwd-bubble")
+  if (bubble) {
+    bubble.addEventListener("click", () => openForwardModal(msgs))
+  }
+  // 头像点击 → 用户信息弹窗
+  const avatarImg = div.querySelector(".msg-avatar")
+  if (avatarImg) {
+    avatarImg.addEventListener("click", (e) => {
+      e.stopPropagation()
+      showUserInfoModal(m, "chat")
+    })
+  }
+  // 右键菜单（与其他消息一致）
+  div.addEventListener("contextmenu", (e) => {
+    e.preventDefault()
+    showContextMenu(e, m)
+  })
+  addLongPress(div, (e) => showContextMenu(e, m))
+  return div
+}
+
+let _forwardMsgs = null
+function openForwardModal(msgs) {
+  const body = $("#forwardBody")
+  if (!body) return
+  _forwardMsgs = msgs
+  body.innerHTML = msgs.map(msg => {
+    const firstChar = (msg.sender || "?").trim().charAt(0) || "?"
+    const contentHtml = renderForwardContent(msg.text, msg.attachments)
+    return `<div class="fwd-msg">
+      <div class="fwd-avatar">${escHtml(firstChar)}</div>
+      <div class="fwd-msg-body">
+        <div class="fwd-msg-sender">${escHtml(msg.sender)}</div>
+        <div class="fwd-msg-content">${contentHtml}</div>
+      </div>
+    </div>`
+  }).join("")
+  $("#forwardModal").style.display = "flex"
+  // 移动端：推入历史状态以支持返回键/关闭按钮分层导航
+  if (isMobile()) {
+    history.pushState({ forward: true }, "", location.href)
+    state.mobileChatActive = true
+  }
+}
+
+function closeForwardModal() {
+  $("#forwardModal").style.display = "none"
+  _forwardMsgs = null
+}
+
 // ===== 用户信息弹窗 =====
 // 存储弹窗内当前用户数据，供黑名单按钮使用
 let userInfoCurrentData = null
@@ -4096,7 +4296,7 @@ function toggleVideoPlay(el) {
 
   // 确保 source 正确加载（某些情况下浏览器可能需要重新设置）
   if (videoUrl && (!video.querySelector("source") || video.querySelector("source").src !== videoUrl)) {
-    video.innerHTML = `<source src="${videoUrl}">`
+    video.innerHTML = `<source src="${videoUrl.replace(/&/g, "&amp;")}">`
   }
 
   // 播放结束回调
@@ -4114,7 +4314,9 @@ function toggleVideoPlay(el) {
   }).catch(err => {
     console.error("视频播放失败:", err, "URL:", videoUrl)
     const timeEl = document.getElementById(videoId + "_time")
-    if (timeEl) timeEl.textContent = "播放失败"
+    if (timeEl) timeEl.textContent = "无法播放，已打开新窗口"
+    // H.265 等浏览器不支持的编码无法内联播放，回退到新窗口打开原视频
+    if (videoUrl) window.open(videoUrl, "_blank")
     currentVideo = null
     video.removeEventListener("ended", onEnded)
   })
@@ -4629,6 +4831,22 @@ function appendWsMessage(m) {
   const roleBadge = getRoleBadgeHtml(m.sender?.role)
   const botMark = isBot ? ' <span style="font-size:10px;color:var(--success)">[Bot]</span>' : ""
 
+  // 转发消息（聊天记录）特殊处理：渲染折叠卡片
+  if (isForwardMessage(m)) {
+    container.appendChild(buildForwardCard(m))
+    const wasAtBottom = isAtBottom()
+    if (wasAtBottom) {
+      scrollToBottom()
+      state.unreadCount = 0
+      updateFloatGroup()
+    } else {
+      state.unreadCount++
+      if (!state.firstUnreadEl) state.firstUnreadEl = null
+      updateFloatGroup()
+    }
+    return
+  }
+
   // 内容渲染（复用共享函数，支持图片/视频/音频/文件/附件）
   const { messageContent, attachmentHtml, badges, refSummary } = renderMessageContent(m)
   const hasText = !!messageContent
@@ -5043,7 +5261,13 @@ function setupEventListeners() {
       return
     }
 
-    // 3. 在聊天中 → 返回群/私聊列表
+    // 4. 转发消息（聊天记录）弹窗打开中 → 关闭弹窗，返回聊天
+    if ($("#forwardModal")?.style.display === "flex") {
+      closeForwardModal()
+      return
+    }
+
+    // 5. 在聊天中 → 返回群/私聊列表
     if (!state.currentGroupId && !state.currentPrivateUserId) return
     // 阻止实际跳转，先 push 一个状态占位
     history.pushState({ mobileChat: true }, "", location.href)
@@ -5899,6 +6123,18 @@ function setupEventListeners() {
       else closeUserInfoModal()
     }
   })
+
+  // 转发消息（聊天记录）弹窗
+  $("#forwardModalClose").addEventListener("click", () => {
+    if (isMobile() && $("#forwardModal").style.display === "flex") history.back()
+    else closeForwardModal()
+  })
+  $("#forwardModal").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) {
+      if (isMobile()) history.back()
+      else closeForwardModal()
+    }
+  })
   // 复制按钮（事件委托）
   $("#userInfoModal").addEventListener("click", (e) => {
     const btn = e.target.closest(".user-info-copy-btn")
@@ -6019,6 +6255,25 @@ function setupEventListeners() {
       return
     }
   })
+
+  // 转发弹窗内的音视频播放（聊天列表的事件委托不覆盖弹窗内容）
+  const forwardBody = $("#forwardBody")
+  if (forwardBody) {
+    forwardBody.addEventListener("click", (e) => {
+      const audioBtn = e.target.closest(".audio-play-btn")
+      if (audioBtn) {
+        e.preventDefault()
+        toggleAudioPlay(audioBtn)
+        return
+      }
+      const videoBtn = e.target.closest(".video-play-btn-circle")
+      if (videoBtn) {
+        e.preventDefault()
+        toggleVideoPlay(videoBtn)
+        return
+      }
+    })
+  }
 
   // 滚动加载
   setupScrollHandler()
