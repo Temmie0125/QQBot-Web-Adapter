@@ -3322,29 +3322,73 @@ function normalizeQQVideoUrl(url) {
   }
 }
 
+// 解析单条子消息块（顶层 === 消息 N === 或嵌套 --- 第N条 --- 通用）
+function parseSingleMessageBlock(block) {
+  const senderM = block.match(/\[发送者\]\s*([^\n]*)/)
+  const sender = senderM ? senderM[1].trim() : "未知"
+  const attachments = []
+  // 附件只扫描 [关联消息] 之前的部分，避免把子消息（嵌套转发）的附件误归到父消息
+  const attScope = block.split(/\[关联消息\]/)[0]
+  const attRe = /\[附件\d+\]\s*类型:(\S+)(?:\s*文件名:(\S+))?(?:\s*尺寸:(\S+))?(?:\s*大小:(\S+))?\s*URL:(\S+)/g
+  let am
+  while ((am = attRe.exec(attScope)) !== null) {
+    const type = am[1]
+    const filename = am[2] || ""
+    const url = am[5] || ""
+    if (!url) continue
+    if (type === "图片") attachments.push({ content_type: "image/jpeg", url, filename })
+    else if (type === "视频") attachments.push({ content_type: "video/mp4", url: normalizeQQVideoUrl(url), filename })
+    else attachments.push({ content_type: "application/octet-stream", url, filename })
+  }
+  const cM = block.match(/\[消息内容\]\s*([\s\S]*?)(?=\n\s*\[发送者\]|\n\s*\[附件\d+\]|\n\s*\[消息类型\]|\n\s*\[关联消息\]|$)/)
+  const text = cM ? cM[1].trim() : ""
+  // 是否为嵌套的合并转发消息
+  const isForward = /合并转发消息/.test(block) || /\[消息内容\]\s*\[群聊的聊天记录\]/.test(block)
+  let nested = null
+  if (isForward) {
+    // 注意：不要吞掉 [关联消息] 之后的前导空白，否则首个子分隔符的缩进会被抹掉，
+    // 导致各层级分隔符缩进不一致，无法据此区分嵌套深度
+    const relM = block.match(/\[关联消息\]([\s\S]*)$/)
+    const relText = relM ? relM[1] : ""
+    if (relText.trim()) nested = parseNestedMessages(relText)
+  }
+  return { sender, text, attachments, isForward, nested }
+}
+
+// 解析 [关联消息] 下 --- 第N条 --- 分隔的子消息列表（支持任意深度嵌套）
+// 关键：只按“最小缩进层级”的 --- 第N条 --- 分隔符切分；更深层级的分隔符属于子转发，
+// 保留在块内由 parseSingleMessageBlock 递归处理，从而保持嵌套结构不被拍平
+function parseNestedMessages(relText) {
+  const sepRe = /^([ \t]*)---+\s*第\s*\d+\s*条\s*---+\s*$/gm
+  let minIndent = Infinity
+  let m
+  const seps = []
+  while ((m = sepRe.exec(relText)) !== null) {
+    const indent = m[1].length
+    seps.push({ index: m.index, indent, end: sepRe.lastIndex })
+    if (indent < minIndent) minIndent = indent
+  }
+  if (seps.length === 0) return []
+  const messages = []
+  let start = 0
+  for (const sep of seps) {
+    if (sep.indent !== minIndent) continue
+    const block = relText.slice(start, sep.index)
+    if (block.trim()) messages.push(parseSingleMessageBlock(block))
+    start = sep.end
+  }
+  const lastBlock = relText.slice(start)
+  if (lastBlock.trim()) messages.push(parseSingleMessageBlock(lastBlock))
+  return messages
+}
+
 function parseForwardMessages(content) {
   const blocks = content.split(/===+\s*消息\s*\d+\s*===+/i)
   const messages = []
   for (let i = 1; i < blocks.length; i++) {
     const block = blocks[i]
     if (!block || !block.trim()) continue
-    const senderM = block.match(/\[发送者\]\s*([^\n]*)/)
-    const sender = senderM ? senderM[1].trim() : "未知"
-    const attachments = []
-    const attRe = /\[附件\d+\]\s*类型:(\S+)(?:\s*文件名:(\S+))?(?:\s*尺寸:(\S+))?(?:\s*大小:(\S+))?\s*URL:(\S+)/g
-    let am
-    while ((am = attRe.exec(block)) !== null) {
-      const type = am[1]
-      const filename = am[2] || ""
-      const url = am[5] || ""
-      if (!url) continue
-      if (type === "图片") attachments.push({ content_type: "image/jpeg", url, filename })
-      else if (type === "视频") attachments.push({ content_type: "video/mp4", url: normalizeQQVideoUrl(url), filename })
-      else attachments.push({ content_type: "application/octet-stream", url, filename })
-    }
-    const cM = block.match(/\[消息内容\]\s*([\s\S]*?)(?=\n\[发送者\]|\n\[附件\d+\]|$|$)/)
-    const text = cM ? cM[1].trim() : ""
-    messages.push({ sender, text, attachments })
+    messages.push(parseSingleMessageBlock(block))
   }
   return messages
 }
@@ -3366,8 +3410,12 @@ function renderForwardFaceTag(ext) {
   return `<span class="fwd-face" title="表情">[表情]</span>`
 }
 
-// 渲染单条转发消息的内容（文本 + 表情 + 附件）
-function renderForwardContent(text, attachments) {
+// 渲染单条转发消息的内容（文本 + 表情 + 附件；嵌套转发则渲染可展开卡片）
+function renderForwardContent(text, attachments, msg) {
+  // 嵌套转发：渲染可点击展开的嵌套聊天记录卡片
+  if (msg && msg.isForward && msg.nested && msg.nested.length) {
+    return renderNestedForward(msg)
+  }
   let html = ""
   if (text) {
     let t = text
@@ -3385,25 +3433,61 @@ function renderForwardContent(text, attachments) {
   return html
 }
 
-// 折叠卡片预览：取前 1~2 条，超长截断；图片/表情包显示为占位符
+// 渲染一组转发子消息（供顶层弹窗与嵌套展开复用）
+function renderForwardMessagesList(msgs) {
+  return msgs.map(msg => {
+    const firstChar = (msg.sender || "?").trim().charAt(0) || "?"
+    const contentHtml = renderForwardContent(msg.text, msg.attachments, msg)
+    return `<div class="fwd-msg">
+      <div class="fwd-avatar">${escHtml(firstChar)}</div>
+      <div class="fwd-msg-body">
+        <div class="fwd-msg-sender">${escHtml(msg.sender)}</div>
+        <div class="fwd-msg-content">${contentHtml}</div>
+      </div>
+    </div>`
+  }).join("")
+}
+
+// 渲染嵌套转发卡片（可点击展开查看内部消息）
+function renderNestedForward(msg) {
+  const id = _fwdNestedId++
+  _fwdNestedMap.set(id, msg.nested)
+  const previewLines = buildForwardPreview(msg.nested)
+  const previewHtml = previewLines.map(l => escHtml(l)).join("<br>")
+  const count = msg.nested.length
+  return `<div class="fwd-nested">
+    <div class="fwd-nested-bubble" data-nested-id="${id}">
+      <div class="fwd-title">聊天记录</div>
+      <div class="fwd-preview">${previewHtml}</div>
+      <div class="fwd-count">共 ${count} 条</div>
+    </div>
+  </div>`
+}
+
+// 折叠卡片预览：取前 1~2 条，超长截断；图片/表情包/嵌套转发显示为占位符
 function buildForwardPreview(messages) {
   const lines = []
   for (const msg of messages.slice(0, 2)) {
-    // 先去掉 face 标签并清理空白，避免原始 <face...> 文本泄露
-    const cleanText = msg.text.replace(/<face[^>]*>/gi, "").trim()
     let preview
-    if (cleanText) {
-      preview = cleanText.replace(/\n/g, " ").slice(0, 44)
+    if (msg.isForward) {
+      // 嵌套转发：直接以 [聊天记录] 表示
+      preview = "[聊天记录]"
     } else {
-      const hasFace = /<face[^>]*>/i.test(msg.text)
-      const hasImage = msg.attachments.some(a => a.content_type.startsWith("image/"))
-      const hasVideo = msg.attachments.some(a => a.content_type.startsWith("video/"))
-      // 表情包（face 占位）优先于图片附件，因为贴纸也是以图片形式下发
-      if (hasFace) preview = "[动画表情]"
-      else if (hasImage) preview = "[图片]"
-      else if (hasVideo) preview = "[视频]"
-      else if (msg.attachments.length) preview = "[文件]"
-      else preview = "[空]"
+      // 先去掉 face 标签并清理空白，避免原始 <face...> 文本泄露
+      const cleanText = msg.text.replace(/<face[^>]*>/gi, "").trim()
+      if (cleanText) {
+        preview = cleanText.replace(/\n/g, " ").slice(0, 44)
+      } else {
+        const hasFace = /<face[^>]*>/i.test(msg.text)
+        const hasImage = msg.attachments.some(a => a.content_type.startsWith("image/"))
+        const hasVideo = msg.attachments.some(a => a.content_type.startsWith("video/"))
+        // 表情包（face 占位）优先于图片附件，因为贴纸也是以图片形式下发
+        if (hasFace) preview = "[动画表情]"
+        else if (hasImage) preview = "[图片]"
+        else if (hasVideo) preview = "[视频]"
+        else if (msg.attachments.length) preview = "[文件]"
+        else preview = "[空]"
+      }
     }
     lines.push(`${msg.sender}: ${preview}`)
   }
@@ -3468,21 +3552,19 @@ function buildForwardCard(m) {
 }
 
 let _forwardMsgs = null
+let _forwardStack = []
+// 嵌套聊天记录映射：气泡 data-nested-id → 嵌套消息数组（id 全局自增，不复用）
+const _fwdNestedMap = new Map()
+let _fwdNestedId = 0
 function openForwardModal(msgs) {
   const body = $("#forwardBody")
   if (!body) return
+  // 由嵌套卡片点入时，将当前内容压栈以便返回上一层
+  if (_forwardMsgs && _forwardMsgs !== msgs) {
+    _forwardStack.push(_forwardMsgs)
+  }
   _forwardMsgs = msgs
-  body.innerHTML = msgs.map(msg => {
-    const firstChar = (msg.sender || "?").trim().charAt(0) || "?"
-    const contentHtml = renderForwardContent(msg.text, msg.attachments)
-    return `<div class="fwd-msg">
-      <div class="fwd-avatar">${escHtml(firstChar)}</div>
-      <div class="fwd-msg-body">
-        <div class="fwd-msg-sender">${escHtml(msg.sender)}</div>
-        <div class="fwd-msg-content">${contentHtml}</div>
-      </div>
-    </div>`
-  }).join("")
+  body.innerHTML = renderForwardMessagesList(msgs)
   $("#forwardModal").style.display = "flex"
   // 移动端：推入历史状态以支持返回键/关闭按钮分层导航
   if (isMobile()) {
@@ -3492,8 +3574,19 @@ function openForwardModal(msgs) {
 }
 
 function closeForwardModal() {
-  $("#forwardModal").style.display = "none"
-  _forwardMsgs = null
+  if (_forwardStack.length > 0) {
+    // 返回上一层（如由嵌套聊天记录点入），弹窗保持打开
+    const prev = _forwardStack.pop()
+    _forwardMsgs = prev
+    const body = $("#forwardBody")
+    if (body) body.innerHTML = renderForwardMessagesList(prev)
+  } else {
+    $("#forwardModal").style.display = "none"
+    _forwardMsgs = null
+    _forwardStack = []
+    _fwdNestedMap.clear()
+    _fwdNestedId = 0
+  }
 }
 
 // ===== 用户信息弹窗 =====
@@ -6260,6 +6353,15 @@ function setupEventListeners() {
   const forwardBody = $("#forwardBody")
   if (forwardBody) {
     forwardBody.addEventListener("click", (e) => {
+      // 嵌套聊天记录卡片：点击在当前弹窗内下钻查看（QQ 风格）
+      const nestedBubble = e.target.closest(".fwd-nested-bubble")
+      if (nestedBubble) {
+        const id = Number(nestedBubble.dataset.nestedId)
+        const nested = _fwdNestedMap.get(id)
+        if (nested) openForwardModal(nested)
+        e.stopPropagation()
+        return
+      }
       const audioBtn = e.target.closest(".audio-play-btn")
       if (audioBtn) {
         e.preventDefault()

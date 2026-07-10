@@ -1330,6 +1330,28 @@ body {
   padding-top: 6px;
   border-top: 1px solid var(--border);
 }
+
+/* 嵌套转发（聊天记录里的聊天记录） */
+.fwd-nested {
+  margin: 6px 0;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+.fwd-nested-bubble {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.fwd-nested-bubble:hover {
+  background: var(--bg-hover);
+}
+.fwd-nested-body {
+  margin-top: 6px;
+  padding-left: 2px;
+}
 .modal-content {
   background: var(--bg-secondary); border-radius: var(--radius-lg);
   width: 90%; max-width: 700px; max-height: 80vh;
