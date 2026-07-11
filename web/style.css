@@ -1370,6 +1370,13 @@ body {
   display: flex; align-items: center; justify-content: center;
 }
 .modal-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+/* 用户信息/聊天记录/成员列表弹窗的关闭按钮：保持在弹窗头部内（头部用 space-between
+   将其推到右上角），而非相对 fixed 覆盖层绝对定位到页面右上角 */
+.user-info-content .modal-close,
+.forward-content .modal-close,
+.member-list-content .modal-close {
+  position: static;
+}
 .modal-body {
   padding: 16px 20px; overflow-y: auto; flex: 1;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
@@ -2731,7 +2738,7 @@ body {
 }
 .modal-close:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-.modal-header { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 24px; }
+.modal-container .modal-header { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 24px; }
 .modal-logo { width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0; }
 .modal-title { font-size: 20px; font-weight: 700; color: var(--text-primary); margin: 0; }
 
