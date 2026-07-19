@@ -603,8 +603,9 @@ body {
 }
 .group-list-item:hover { background: var(--bg-hover); }
 .group-list-item.active { background: var(--accent-light); }
-.group-list-item.pinned { border-left: 3px solid var(--accent); padding-left: 13px; }
-.group-list-item.pinned.active { border-left-color: var(--accent); }
+.group-list-item.pinned { border-left: 3px solid var(--accent); padding-left: 13px; background: rgba(128, 128, 128, 0.12); }
+.group-list-item.pinned:hover { background: rgba(128, 128, 128, 0.2); }
+.group-list-item.pinned.active { border-left-color: var(--accent); background: rgba(128, 128, 128, 0.22); }
 .pin-badge { font-size: 12px; line-height: 1; margin-left: 4px; flex-shrink: 0; }
 .group-list-item .group-avatar {
   width: 40px; height: 40px; border-radius: 50%;

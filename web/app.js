@@ -818,14 +818,13 @@ function renderGroupList() {
           nameHtml = `<div class="group-item-name">${escHtml(g.group_name || pureId)}</div>`
         }
         const isPinned = pinnedIds.has(String(g.group_id))
-        const pinBadge = isPinned ? '<span class="pin-badge" title="已置顶">📌</span>' : ''
         const blBadge = g.is_blacklisted ? '<span class="blacklist-badge">拉黑</span>' : ''
         return `
         <div class="group-list-item ${g.group_id === state.currentGroupId && state.chatType === "group" ? 'active' : ''}${isPinned ? ' pinned' : ''}"
              data-group-id="${g.group_id}">
           ${avatarHtml}
           <div class="group-item-info">
-            <div class="group-item-name-row">${nameHtml}${pinBadge}${blBadge}</div>
+            <div class="group-item-name-row">${nameHtml}${blBadge}</div>
             <div class="group-item-id">${escHtml(pureId)}</div>
           </div>
         </div>
