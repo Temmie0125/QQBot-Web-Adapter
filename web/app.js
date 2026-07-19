@@ -42,6 +42,10 @@ const state = {
   groupBindings: {}, // group_id → QQ群号
   boundGroupInfos: {}, // QQ群号 → { qq, group_name, member_count }
   groupMode: "active",  // "active" | "quanliang"
+  allGroups: [],        // 全量群（活跃列表置顶时用于补充不在活跃列表的群）
+  allGroupsBotId: null, // allGroups 对应的 bot，切换 bot 时失效
+  pinnedGroups: [],     // 当前 bot 置顶的群 group_id
+  pinnedPrivate: [],    // 当前 bot 置顶的私聊 user_id
   ws: null,        // WebSocket 连接
   wsReady: false,
   mobileChatActive: false,       // 移动端是否已推入 history state（用于返回键拦截）
@@ -332,6 +336,9 @@ async function selectBot(botId) {
   const prevChatId = state.chatType === "group" ? state.currentGroupId : state.currentPrivateUserId
   state.currentBotId = botId
   state.currentBot = state.bots.find(b => b.self_id === botId)
+  state.allGroups = []
+  state.allGroupsBotId = null
+  await loadPins()
   loadBlacklistData()
   state.currentGroupId = null
   state.currentGroup = null
@@ -647,6 +654,7 @@ function getPureGroupId(groupId) {
 async function loadGroups() {
   if (!state.currentBotId) return
   const listEl = $("#groupListItems")
+  loadPins()
   const mode = state.groupMode || "active"
   console.log("[loadGroups] 请求群列表, botId:", state.currentBotId, "mode:", mode)
 
@@ -663,6 +671,10 @@ async function loadGroups() {
     // 加载绑定群的群信息（单次请求，无绑定则跳过）
     if (Object.keys(state.groupBindings).length) {
       await loadBoundGroupInfos()
+    }
+    // 活跃群列表下，若已置顶的群不在活跃列表，需从全量群列表补充，以便置顶展示
+    if (state.groupMode !== "quanliang" && state.pinnedGroups.length) {
+      await ensureAllGroups()
     }
     renderGroupList()
   } catch (err) {
@@ -685,20 +697,104 @@ async function loadBoundGroupInfos() {
   } catch {}
 }
 
+// ===== 置顶（pin）功能 =====
+// 置顶数据存储于后端（redis / sqlite，跟随设置中的存储方式），按 bot 区分
+
+async function loadPins() {
+  state.pinnedGroups = []
+  state.pinnedPrivate = []
+  if (!state.currentBotId) return
+  try {
+    const data = await api(`/pins?bot=${encodeURIComponent(state.currentBotId)}`)
+    state.pinnedGroups = Array.isArray(data.groups) ? data.groups : []
+    state.pinnedPrivate = Array.isArray(data.private) ? data.private : []
+  } catch (e) {
+    state.pinnedGroups = []
+    state.pinnedPrivate = []
+    console.error("[loadPins] 读取置顶失败:", e)
+  }
+}
+
+async function _savePins(kind, arr) {
+  if (kind === "groups") state.pinnedGroups = arr
+  else state.pinnedPrivate = arr
+  try {
+    await api("/pins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bot: state.currentBotId, kind, ids: arr }),
+    })
+  } catch (e) {
+    showToast("保存置顶失败：" + e.message)
+  }
+}
+
+function togglePinGroup(groupId) {
+  const id = String(groupId)
+  const arr = state.pinnedGroups
+  const i = arr.indexOf(id)
+  if (i >= 0) arr.splice(i, 1); else arr.push(id)
+  _savePins("groups", arr)
+}
+function isGroupPinned(groupId) { return state.pinnedGroups.map(String).includes(String(groupId)) }
+
+function togglePinPrivate(userId) {
+  const id = String(userId)
+  const arr = state.pinnedPrivate
+  const i = arr.indexOf(id)
+  if (i >= 0) arr.splice(i, 1); else arr.push(id)
+  _savePins("private", arr)
+}
+function isPrivatePinned(userId) { return state.pinnedPrivate.map(String).includes(String(userId)) }
+
+// 活跃群列表需要展示“不在活跃列表但已置顶”的群，需从全量群列表补充查找
+async function ensureAllGroups() {
+  if (state.allGroupsBotId === state.currentBotId && state.allGroups.length) return
+  try {
+    state.allGroups = await api(`/bot/${state.currentBotId}/groups?type=quanliang`)
+    state.allGroupsBotId = state.currentBotId
+  } catch (e) { state.allGroups = []; state.allGroupsBotId = state.currentBotId }
+}
+
 function renderGroupList() {
   const listEl = $("#groupListItems")
   const searchTerm = ($("#groupSearch")?.value || "").toLowerCase()
 
-  const filtered = state.groups.filter(g => {
+  const matchSearch = (g) => {
     const pureId = getPureGroupId(g.group_id)
     const note = state.groupNotes[g.group_id] || ""
     return g.group_name.toLowerCase().includes(searchTerm) ||
       pureId.toLowerCase().includes(searchTerm) ||
       note.toLowerCase().includes(searchTerm)
-  })
+  }
+  const baseFiltered = state.groups.filter(matchSearch)
 
-  listEl.innerHTML = filtered.length
-    ? filtered.map(g => {
+  // 置顶项优先展示
+  const pinSet = new Set(state.pinnedGroups.map(String))
+  let pinnedItems = []
+  if (state.groupMode === "quanliang") {
+    // 全量群列表：仅展示“置顶且为全量群”
+    pinnedItems = state.groups.filter(g => pinSet.has(String(g.group_id)))
+  } else {
+    // 活跃群列表：置顶项优先，且不管是否在活跃列表（从全量群列表补充查找）
+    const allMap = new Map(state.allGroups.map(g => [String(g.group_id), g]))
+    const seen = new Set()
+    for (const gid of state.pinnedGroups) {
+      const key = String(gid)
+      if (seen.has(key)) continue
+      seen.add(key)
+      const g = state.groups.find(x => String(x.group_id) === key) || allMap.get(key)
+      if (!g || !matchSearch(g)) continue
+      pinnedItems.push(g)
+    }
+  }
+
+  const pinnedIds = new Set(pinnedItems.map(g => String(g.group_id)))
+  const normalItems = baseFiltered.filter(g => !pinnedIds.has(String(g.group_id)))
+  const ordered = [...pinnedItems, ...normalItems]
+
+  listEl.innerHTML = ordered.length
+    ? ordered.map(g => {
         const pureId = getPureGroupId(g.group_id)
         const note = state.groupNotes[g.group_id]
         // 绑定群信息（用于无备注的绑定群）
@@ -721,13 +817,15 @@ function renderGroupList() {
         } else {
           nameHtml = `<div class="group-item-name">${escHtml(g.group_name || pureId)}</div>`
         }
+        const isPinned = pinnedIds.has(String(g.group_id))
+        const pinBadge = isPinned ? '<span class="pin-badge" title="已置顶">📌</span>' : ''
         const blBadge = g.is_blacklisted ? '<span class="blacklist-badge">拉黑</span>' : ''
         return `
-        <div class="group-list-item ${g.group_id === state.currentGroupId && state.chatType === "group" ? 'active' : ''}"
+        <div class="group-list-item ${g.group_id === state.currentGroupId && state.chatType === "group" ? 'active' : ''}${isPinned ? ' pinned' : ''}"
              data-group-id="${g.group_id}">
           ${avatarHtml}
           <div class="group-item-info">
-            <div class="group-item-name-row">${nameHtml}${blBadge}</div>
+            <div class="group-item-name-row">${nameHtml}${pinBadge}${blBadge}</div>
             <div class="group-item-id">${escHtml(pureId)}</div>
           </div>
         </div>
@@ -824,25 +922,34 @@ function renderPrivateChatList() {
   const listEl = $("#groupListItems")
   const searchTerm = ($("#groupSearch")?.value || "").toLowerCase()
 
-  const filtered = state.privateChats.filter(u => {
-    return String(u.user_id).toLowerCase().includes(searchTerm) ||
-      (u.nickname || "").toLowerCase().includes(searchTerm)
-  })
+  const matchSearch = (u) =>
+    String(u.user_id).toLowerCase().includes(searchTerm) ||
+    (u.nickname || "").toLowerCase().includes(searchTerm)
 
-  listEl.innerHTML = filtered.length
-    ? filtered.map(u => {
+  const base = state.privateChats.filter(matchSearch)
+
+  // 置顶私聊优先展示（不管是否在活跃列表，只要置顶即可）
+  const pinSet = new Set(state.pinnedPrivate.map(String))
+  const pinnedItems = base.filter(u => pinSet.has(String(u.user_id)))
+  const normalItems = base.filter(u => !pinSet.has(String(u.user_id)))
+  const ordered = [...pinnedItems, ...normalItems]
+
+  listEl.innerHTML = ordered.length
+    ? ordered.map(u => {
         const avatarSrc = u.avatar ? `style="background-image:url(${escHtml(u.avatar)})"` : ""
+        const isPinned = pinSet.has(String(u.user_id))
+        const pinBadge = isPinned ? '<span class="pin-badge" title="已置顶">📌</span>' : ''
         const blBadge = u.is_blacklisted ? '<span class="blacklist-badge">拉黑</span>' : ''
         const safeOpenid = escHtml(u.openid || "")
         const safeUnionid = escHtml(u.unionid || "")
         return `
-        <div class="group-list-item ${String(u.user_id) === state.currentPrivateUserId && state.chatType === "private" ? 'active' : ''}"
+        <div class="group-list-item ${String(u.user_id) === state.currentPrivateUserId && state.chatType === "private" ? 'active' : ''}${isPinned ? ' pinned' : ''}"
              data-user-id="${String(u.user_id)}"
              data-openid="${safeOpenid}"
              data-unionid="${safeUnionid}">
           <div class="group-avatar user-avatar" ${avatarSrc}>${u.avatar ? '' : escHtml((u.nickname || String(u.user_id))[0])}</div>
           <div class="group-item-info">
-            <div class="group-item-name-row"><div class="group-item-name">${escHtml(u.nickname || String(u.user_id))}</div>${blBadge}</div>
+            <div class="group-item-name-row"><div class="group-item-name">${escHtml(u.nickname || String(u.user_id))}</div>${pinBadge}${blBadge}</div>
             <div class="group-item-id">${escHtml(String(u.user_id))}</div>
           </div>
         </div>
@@ -2609,6 +2716,7 @@ function showGroupContextMenu(e, groupId) {
   $("#ctxBindGroup").style.display = isBound ? "none" : ""
   $("#ctxUnbindGroup").style.display = isBound ? "" : "none"
   $("#ctxRefreshGroupInfo").style.display = isBound ? "" : "none"
+  $("#ctxPinGroup").innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M9 2l3 3-1 1-1-1-2 2v5l-2 1 1-2 3-3-1-1 2-2z"/></svg>' + (isGroupPinned(groupId) ? "取消置顶" : "置顶")
 
   const menu = $("#groupContextMenu")
   menu.style.display = "block"
@@ -2648,6 +2756,7 @@ function showPrivateUserContextMenu(e, userId, openid, unionid) {
   const isBlacklisted = u?.is_blacklisted || checkUserBlacklisted(openid, unionid)
   $("#ctxBlPvUser").style.display = isBlacklisted ? "none" : ""
   $("#ctxUnblPvUser").style.display = isBlacklisted ? "" : "none"
+  $("#ctxPinPrivate").innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M9 2l3 3-1 1-1-1-2 2v5l-2 1 1-2 3-3-1-1 2-2z"/></svg>' + (isPrivatePinned(userId) ? "取消置顶" : "置顶")
 
   const menu = $("#privateUserContextMenu")
   menu.style.display = "block"
@@ -2723,6 +2832,11 @@ async function handlePrivateUserContextAction(action) {
       }
       break
     }
+    case "pin-private":
+      togglePinPrivate(userId)
+      renderPrivateChatList()
+      showToast(isPrivatePinned(userId) ? "已置顶该用户" : "已取消置顶该用户")
+      break
   }
 }
 
@@ -2783,6 +2897,14 @@ function handleGroupContextAction(action) {
       break
     case "unblacklist-group":
       unblacklistGroupFromWeb(groupContextGroupId)
+      break
+    case "pin-group":
+      togglePinGroup(groupContextGroupId)
+      if (state.groupMode !== "quanliang") {
+        ensureAllGroups().then(() => renderGroupList())
+      }
+      renderGroupList()
+      showToast(isGroupPinned(groupContextGroupId) ? "已置顶该群聊" : "已取消置顶该群聊")
       break
   }
 }
@@ -6579,7 +6701,8 @@ function hasSensitiveChange(cur, orig) {
     cur.login.enabled !== orig.login.enabled ||
     cur.login.username !== orig.login.username ||
     (cur.login.password !== "••••••••" && cur.login.password !== orig.login.password) ||
-    cur.notifyUserId !== (orig.notifyUserId || "")
+    cur.notifyUserId !== (orig.notifyUserId || "") ||
+    cur.storageBackend !== (orig.storageBackend || "redis")
 }
 
 // 保存按钮点击

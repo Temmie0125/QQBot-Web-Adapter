@@ -122,6 +122,61 @@ async function configSave() {
   } catch {}
 }
 
+// ========== 置顶数据多后端存储（redis / sqlite） ==========
+const PIN_KEY_PREFIX = "wind-pin:"
+
+function pinKey(selfId, kind) {
+  return `${PIN_KEY_PREFIX}${selfId}:${kind}`
+}
+
+// 当前实际使用的后端：sqlite 且 Bot.PinDB 可用时走 SQLite，否则走 Redis
+function currentPinBackend() {
+  return config.storageBackend === "sqlite" && Bot.PinDB ? "sqlite" : "redis"
+}
+
+async function readPinKey(backend, key) {
+  if (backend === "sqlite" && Bot.PinDB) {
+    return Bot.PinDB.getByKey(key)
+  }
+  const raw = await redis.get(key)
+  return raw ? JSON.parse(raw) : null
+}
+
+async function writePinKey(backend, key, value) {
+  const str = JSON.stringify(value)
+  if (backend === "sqlite" && Bot.PinDB) {
+    await Bot.PinDB.setByKey(key, value)
+    return
+  }
+  await redis.set(key, str)
+}
+
+async function getPins(selfId, kind) {
+  const v = await readPinKey(currentPinBackend(), pinKey(selfId, kind))
+  return Array.isArray(v) ? v : []
+}
+
+async function setPins(selfId, kind, arr) {
+  await writePinKey(currentPinBackend(), pinKey(selfId, kind), arr)
+}
+
+// 从 fromBackend 读取全部置顶键，写入 toBackend（用于切换后端时迁移）
+async function migratePins(fromBackend, toBackend) {
+  if (fromBackend === toBackend) return
+  let keys = []
+  if (fromBackend === "sqlite" && Bot.PinDB) {
+    keys = await Bot.PinDB.getAllPinKeys()
+  } else {
+    keys = await redis.keys(`${PIN_KEY_PREFIX}*`)
+  }
+  // 仅处理以本插件前缀开头的键，避免误迁
+  const target = keys.filter(k => k.startsWith(PIN_KEY_PREFIX))
+  for (const key of target) {
+    const v = await readPinKey(fromBackend, key)
+    if (v !== null) await writePinKey(toBackend, key, v)
+  }
+}
+
 // 加载配置
 await loadConfig()
 
@@ -2580,6 +2635,35 @@ Bot.express.get(`${WEB_BASE}/api/bots`, (req, res) => {
   }
 })
 
+// 获取某 Bot 的置顶数据（群聊 + 私信），按当前配置的存储后端读取
+Bot.express.get(`${WEB_BASE}/api/pins`, async (req, res) => {
+  try {
+    const selfId = req.query.bot
+    if (!selfId) return res.status(400).json({ error: "缺少 bot 参数" })
+    const groups = await getPins(String(selfId), "groups")
+    const priv = await getPins(String(selfId), "private")
+    res.json({ groups, private: priv, backend: currentPinBackend() })
+  } catch (err) {
+    logger.error("[QQBot-Web] 置顶读取接口错误:", err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 写入某 Bot 的置顶数据（群聊或私信）
+Bot.express.post(`${WEB_BASE}/api/pins`, async (req, res) => {
+  try {
+    const { bot, kind, ids } = req.body || {}
+    if (!bot) return res.status(400).json({ error: "缺少 bot 参数" })
+    if (kind !== "groups" && kind !== "private") return res.status(400).json({ error: "kind 非法" })
+    if (!Array.isArray(ids)) return res.status(400).json({ error: "ids 必须为数组" })
+    await setPins(String(bot), kind, ids.map(String))
+    res.json({ ok: true, backend: currentPinBackend() })
+  } catch (err) {
+    logger.error("[QQBot-Web] 置顶写入接口错误:", err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
 // 获取 Bot 群列表（支持 ?type=active|quanliang）
 Bot.express.get(`${WEB_BASE}/api/bot/:selfId/groups`, async (req, res) => {
   try {
@@ -3790,14 +3874,16 @@ Bot.express.post(`${WEB_BASE}/api/config/save`, async (req, res) => {
         return res.status(400).json({ error: `验证码错误，还剩 ${remaining} 次重试机会` })
       }
 
-      // 验证通过，删除验证码
+      // 验证通过，删除验证码与发送冷却，便于再次获取新验证码
       await redis.del(codeKey)
       await redis.del(`wind-config-attempts:${session.username}`)
+      await redis.del(`wind-config-code-cooldown:${session.username}`)
     }
 
     // 保存变更前记录原始凭据（用于判断是否需要清除 session）
     const oldUsername = config.login.username
     const oldPassword = config.login.password
+    const oldStorageBackend = config.storageBackend === "sqlite" ? "sqlite" : "redis"
 
     // 保存配置
     if (basePath !== undefined) config.basePath = basePath
@@ -3849,6 +3935,16 @@ Bot.express.post(`${WEB_BASE}/api/config/save`, async (req, res) => {
     Bot.maxMediaCacheSize = (Number.isFinite(mcs) && mcs >= 1 && mcs <= 100) ? Math.floor(mcs) : 10
 
     await configSave()
+
+    // 存储后端切换时，自动把旧后端的置顶数据迁移到新后端
+    if (storageBackend !== undefined && oldStorageBackend !== config.storageBackend) {
+      try {
+        await migratePins(oldStorageBackend, config.storageBackend)
+        logger.mark(`[QQBot-Web] 置顶数据已从 ${oldStorageBackend} 迁移到 ${config.storageBackend}`)
+      } catch (e) {
+        logger.error(`[QQBot-Web] 置顶数据迁移失败: ${e.stack || e.message}`)
+      }
+    }
 
     // 如果用户名或密码有变更，使所有 session 失效（所有已登录设备需重新登录）
     if ((username !== undefined && username !== oldUsername) ||

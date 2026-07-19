@@ -603,6 +603,9 @@ body {
 }
 .group-list-item:hover { background: var(--bg-hover); }
 .group-list-item.active { background: var(--accent-light); }
+.group-list-item.pinned { border-left: 3px solid var(--accent); padding-left: 13px; }
+.group-list-item.pinned.active { border-left-color: var(--accent); }
+.pin-badge { font-size: 12px; line-height: 1; margin-left: 4px; flex-shrink: 0; }
 .group-list-item .group-avatar {
   width: 40px; height: 40px; border-radius: 50%;
   background: var(--accent);
