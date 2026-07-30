@@ -1914,8 +1914,18 @@ body {
 @media (max-width: 768px) {
   /* PC 侧边栏在移动端隐藏 */
   .sidebar { display: none !important; }
-  /* 顶部标题简化 */
-  .topbar-title { font-size: 14px; }
+  /* 顶部标题：移动端保证显示 */
+  .topbar { padding: 0 12px; gap: 8px; }
+  .bot-info, .bot-dropdown-arrow { display: none; }
+  .topbar-title {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   /* 移动端底部导航 */
   .mobile-nav {
     display: flex;
@@ -1945,6 +1955,33 @@ body {
   }
   .mobile-nav-item svg { width: 22px; height: 22px; }
   .mobile-nav-item.active { color: var(--accent); }
+
+/* ===== 拓展页面列表（横幅） ===== */
+.extensions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+.ext-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, transform .05s ease;
+}
+.ext-banner:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.ext-banner:active { transform: scale(0.99); }
+.ext-icon { font-size: 20px; line-height: 1; }
+.ext-title { flex: 1; font-size: 15px; font-weight: 500; color: var(--text-primary); }
+.ext-arrow { color: var(--text-muted); font-size: 20px; }
 
   /* 移动端页面切换 */
   .page-mobile { display: none !important; flex: 1; overflow: hidden; flex-direction: column; }

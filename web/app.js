@@ -119,6 +119,8 @@ function addLongPress(el, callback) {
 // ===== 自定义扩展页面（开发者通过 webadapter/page.{js,json} 或 Bot.webAdapter 注册） =====
 const webPagesMap = new Map()
 const webPagesMounted = new Set()
+// 记录当前处于「弹窗打开中」状态的自定义页面（由 iframe 通过 postMessage 上报）
+const webPageModalState = new Set()
 
 // 拉取自定义页面并动态生成侧边栏项与页面容器
 async function loadWebPages() {
@@ -156,6 +158,26 @@ async function loadWebPages() {
         sec.className = "page"
         sec.id = `page-${p.id}`
         content.appendChild(sec)
+      }
+
+      // 移动端「拓展」页：横幅列表
+      const list = document.getElementById("extensionsList")
+      if (list && !document.getElementById(`ext-${p.id}`)) {
+        const card = document.createElement("div")
+        card.className = "ext-banner"
+        card.id = `ext-${p.id}`
+        const ic = document.createElement("span")
+        ic.className = "ext-icon"
+        ic.textContent = p.icon || "📄"
+        const ti = document.createElement("span")
+        ti.className = "ext-title"
+        ti.textContent = p.title
+        const ar = document.createElement("span")
+        ar.className = "ext-arrow"
+        ar.textContent = "›"
+        card.append(ic, ti, ar)
+        card.addEventListener("click", () => navigateTo(p.id))
+        list.appendChild(card)
       }
     }
     // 若当前 URL hash 指向某个自定义页面，进入后自动挂载
@@ -196,23 +218,61 @@ function mountWebPage(page) {
 }
 
 // ===== 页面导航 =====
-function navigateTo(page) {
+let extReturnPage = null   // 进入「拓展区」前的页面，用于返回键离开后回到原处
+let extDepth = 0           // 拓展区在当前历史栈中的层数（拓展列表 / 自定义页面 / 弹窗守卫）
+let suppressPop = 0        // 需忽略的 popstate 次数（程序化 history.go 触发）
+
+function navigateTo(page, opts = {}) {
+  const pushHistory = opts.push !== false
+  const prevPage = state.currentPage
+  const inArea = (p) => webPagesMap.has(p) || p === "extensions"
+  const wasInArea = inArea(prevPage)
   console.log("[navigateTo]", page, "currentBotId:", state.currentBotId)
+  // 离开自定义页面时清理其弹窗状态
+  if (webPagesMap.has(prevPage) && prevPage !== page) {
+    webPageModalState.delete(prevPage)
+  }
   state.currentPage = page
 
   // PC 侧边栏
   $$(".nav-item").forEach(el => el.classList.toggle("active", el.dataset.page === page))
   $$(".page").forEach(el => el.classList.toggle("active", el.id === `page-${page}`))
 
-  // 移动端底部导航
-  $$(".mobile-nav-item").forEach(el => el.classList.toggle("active", el.dataset.page === page))
+  // 移动端底部导航（自定义页面归属「拓展」入口，保持高亮）
+  $$(".mobile-nav-item").forEach(el => {
+    const isActive = el.dataset.page === page || (webPagesMap.has(page) && el.dataset.page === "extensions")
+    el.classList.toggle("active", isActive)
+  })
+
+  // 进入拓展区：逐层压入历史记录（拓展列表 / 自定义页面 / 弹窗守卫各一层）
+  const enterArea = (sub) => {
+    if (!isMobile() || !pushHistory) return
+    if (extDepth === 0) extReturnPage = prevPage
+    extDepth++
+    history.pushState({ ext: true, sub, modal: false }, "", location.href)
+  }
 
   // 自定义扩展页面
   if (webPagesMap.has(page)) {
     stopDashboardAutoRefresh()
     resetChatView()
+    enterArea(page)
     mountWebPage(page)
     return
+  }
+
+  if (page === "extensions") {
+    stopDashboardAutoRefresh()
+    if (isMobile()) resetChatView()
+    enterArea("extensions")
+    return
+  }
+
+  // 离开拓展区（前往核心页面）：一次性弹掉拓展区的所有历史层
+  if (wasInArea && isMobile() && pushHistory && extDepth > 0) {
+    suppressPop += extDepth
+    history.go(-extDepth)
+    extDepth = 0
   }
 
   if (page === "messages") {
@@ -5541,6 +5601,45 @@ function setupEventListeners() {
   // 移动端：拦截浏览器物理返回键，分层导航
   window.addEventListener("popstate", (e) => {
     if (!isMobile()) return
+    // 程序化 history.go（离开拓展区时）触发的 popstate，直接忽略
+    if (suppressPop > 0) { suppressPop--; return }
+
+    const s = e.state
+    // 拓展区内部返回：web page 有弹窗先关弹窗，否则回到拓展列表
+    if (s && s.ext) {
+      extDepth = Math.max(0, extDepth - 1)
+      const sub = s.sub
+      const sec = document.getElementById(`page-${sub}`)
+      let modalOpen = false
+      if (webPageModalState.has(sub)) modalOpen = true
+      if (sec) {
+        const dlg = sec.querySelector("dialog[open]")
+        if (dlg) { dlg.close(); modalOpen = true }
+      }
+      if (modalOpen) {
+        // 通知 iframe 关闭其弹窗，并重新压入守卫态以停留在本页
+        const iframe = sec && sec.querySelector("iframe")
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ type: "webpage-close-modal" }, "*")
+        }
+        webPageModalState.delete(sub)
+        history.pushState({ ext: true, sub, modal: true }, "", location.href)
+        extDepth++
+        return
+      }
+      webPageModalState.delete(sub)
+      // 无弹窗可关闭 → 回到拓展列表（同一历史层，不堆叠）
+      navigateTo("extensions", { push: false })
+      return
+    }
+
+    // 离开拓展区 / 其它无状态返回 → 回到进入拓展区前的页面（或消息页）
+    if (!s || (!s.mobileChat && !s.rawModal && !s.userInfo && !s.memberList && !s.forward)) {
+      extDepth = 0
+      navigateTo(extReturnPage || "messages", { push: false })
+      return
+    }
+
     if (!state.mobileChatActive) return
 
     // 1. rawModal 打开中 → 关闭弹窗
@@ -5574,6 +5673,24 @@ function setupEventListeners() {
     // 模拟返回按钮行为
     const chatBackBtn = $("#chatHeaderBack")
     if (chatBackBtn) chatBackBtn.click()
+  })
+
+  // 自定义页面（iframe）上报其弹窗打开/关闭状态，用于拦截返回键
+  // 页面侧约定：弹窗打开/关闭时 postMessage({ type: "webpage-modal", open: true/false, id })
+  window.addEventListener("message", (e) => {
+    const d = e.data
+    if (!d || d.type !== "webpage-modal" || typeof d.open !== "boolean") return
+    const id = d.id || state.currentPage
+    if (d.open) {
+      webPageModalState.add(id)
+      // 在当前页面顶部压入守卫态，使返回键优先关闭弹窗而非离开页面
+      if (isMobile() && id === state.currentPage && extDepth > 0) {
+        history.pushState({ ext: true, sub: id, modal: true }, "", location.href)
+        extDepth++
+      }
+    } else {
+      webPageModalState.delete(id)
+    }
   })
 
   $("#botSelector").addEventListener("click", toggleBotDropdown)
