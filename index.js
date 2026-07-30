@@ -1,11 +1,12 @@
 import YAML from "yaml"
 import path from "node:path"
 import fs from "node:fs/promises"
+import fsSync from "node:fs"
 import os from "node:os"
 import crypto from "node:crypto"
 import { execSync, exec as execCb } from "node:child_process"
 import { promisify } from "node:util"
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 import { createRequire } from "node:module"
 import express from "express"
 import { isGroupBlacklisted, isUserBlacklisted, blacklistGroup as blGroup, unblacklistGroup as unblGroup, blacklistUser as blUser, unblacklistUser as unblUser, getBlacklistData } from "../QQBot-Plugin/lib/blacklist.js"
@@ -217,6 +218,123 @@ async function resolveLocalFile(file) {
 const WEB_BASE_PREFIX = config.basePath || "qqbot-web"
 const WEB_BASE = `/${WEB_BASE_PREFIX}`
 const WS_PATH = `${WEB_BASE_PREFIX}-ws`
+
+// ========== 自定义页面（开发者扩展 Web 控制台页面） ==========
+// 两种注册方式：
+//   1) 约定式：扫描 plugins/<插件>/webadapter/page.{js,json}（导出单个或数组描述符）
+//   2) 编程式：Bot.webAdapter.registerPage(pluginName, descriptor)
+// 描述符字段：
+//   { id, title, icon, html?|src?, script?, style? }
+//   - src ：指向 webadapter/ 下的 HTML 文件，以 iframe 嵌入
+//   - html ：直接注入的 HTML 片段（简单静态页）
+//   - script/style ：webadapter/ 下的 js/css（注入时按需加载）
+const pluginsRoot = path.dirname(QQBT_PLUGIN_DIR)
+const webPages = new Map()
+// 已初始化的「操作模块」路径，避免 login / plugins/loaded 重复扫描时重复初始化
+const webInited = new Set()
+
+function _normalizePage(pluginName, def) {
+  if (!def || typeof def !== "object") return null
+  const id = String(def.id || "").trim()
+  const title = String(def.title || "").trim()
+  if (!id || !title) return null
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) return null
+  const plugin = pluginName || def.plugin || "external"
+  let type, src = null, html = null
+  if (def.src) {
+    type = "iframe"
+    src = `${WEB_BASE}/api/web-page/${encodeURIComponent(plugin)}/${String(def.src).replace(/^\/+/, "")}`
+  } else {
+    type = "html"
+    html = typeof def.html === "string" ? def.html : ""
+  }
+  const asset = (f) => (f ? `${WEB_BASE}/api/web-page/${encodeURIComponent(plugin)}/${String(f).replace(/^\/+/, "")}` : null)
+  // 排序优先级：数值越小越靠前（与插件加载 priority 约定一致）；未设置默认为 100
+  const priority = Number.isFinite(def.priority) ? def.priority : 100
+  return {
+    id, title, icon: def.icon || "📄", plugin, type, priority,
+    src, html,
+    style: asset(def.style),
+    script: asset(def.script),
+  }
+}
+
+function registerWebPage(pluginName, def) {
+  const p = _normalizePage(pluginName, def)
+  if (!p) return false
+  if (webPages.has(p.id)) logger.warn(`[QQBot-Web] 自定义页面 id 冲突，已覆盖: ${p.id}`)
+  webPages.set(p.id, p)
+  return true
+}
+
+async function scanWebPages() {
+  try {
+    const dirs = fsSync.readdirSync(pluginsRoot, { withFileTypes: true })
+    for (const ent of dirs) {
+      if (!ent.isDirectory()) continue
+      const wd = path.join(pluginsRoot, ent.name, "webadapter")
+
+      // 1) 约定式页面注册：plugins/<插件>/webadapter/page.{js,json}
+      for (const fname of ["page.js", "page.json", "pages.js", "pages.json"]) {
+        const fp = path.join(wd, fname)
+        if (!fsSync.existsSync(fp)) continue
+        try {
+          let mod = fname.endsWith(".json")
+            ? JSON.parse(fsSync.readFileSync(fp, "utf8"))
+            : (await import(pathToFileURL(fp).href)).default
+          const list = Array.isArray(mod) ? mod
+            : (mod && mod.pages) ? (Array.isArray(mod.pages) ? mod.pages : [mod.pages])
+              : mod
+          ;(Array.isArray(list) ? list : [list]).forEach(d => registerWebPage(ent.name, d))
+        } catch (e) {
+          logger.error(`[QQBot-Web] 加载自定义页面失败 ${fp}:`, e.message)
+        }
+      }
+
+      // 2) 约定式操作模块：plugins/<插件>/webadapter/index.js
+      //    统一由 WebAdapter 负责初始化（页面注册 + API / 操作），
+      //    插件主入口 index.js 无需任何改动，只需提供该文件即可。
+      const opPath = path.join(wd, "index.js")
+      if (!webInited.has(opPath) && fsSync.existsSync(opPath)) {
+        try {
+          const opMod = await import(pathToFileURL(opPath).href)
+          const initFn = opMod.init || opMod.default
+          if (typeof initFn === "function") {
+            initFn({
+              basePath: WEB_BASE.replace(/^\//, ""),
+              apiBase: WEB_BASE + "/api",
+              pluginName: ent.name,
+              pluginDir: path.join(pluginsRoot, ent.name),
+              logger,
+            })
+            webInited.add(opPath)
+            logger.mark(`[QQBot-Web] 已初始化 ${ent.name} 的 web 操作模块`)
+          }
+        } catch (e) {
+          logger.error(`[QQBot-Web] 初始化 ${ent.name} 的 web 操作模块失败:`, e.message)
+        }
+      }
+    }
+    logger.mark(`[QQBot-Web] 已扫描到 ${webPages.size} 个自定义页面`)
+  } catch (e) {
+    logger.error("[QQBot-Web] 扫描自定义页面出错:", e)
+  }
+}
+
+// 编程式注册接口（供其他插件调用）
+Bot.webAdapter = Bot.webAdapter || {}
+Bot.webAdapter.registerPage = (pluginName, def) => registerWebPage(pluginName, def)
+Bot.webAdapter.registerPages = (pluginName, arr) => (Array.isArray(arr) ? arr : []).forEach(d => registerWebPage(pluginName, d))
+Bot.webAdapter.getPages = () => [...webPages.values()].sort((a, b) => a.priority - b.priority)
+Bot.webAdapter.scan = () => scanWebPages()
+
+// 开机扫描（插件文件已全在磁盘，与加载顺序无关）；bot 上线后再扫一次以纳入编程式注册
+scanWebPages()
+;["login", "plugins/loaded"].forEach(ev => {
+  if (typeof Bot.on === "function") {
+    try { Bot.on(ev, () => { try { scanWebPages() } catch {} }) } catch {}
+  }
+})
 
 // ========== 运行时提高 Express body 大小限制（免改 lib/bot.js） ==========
 {
@@ -2226,13 +2344,19 @@ Bot.express.use(`${WEB_BASE}/api`, rateLimitMiddleware(RATELIMIT_MAX, RATELIMIT_
 
 // 安全响应头中间件（所有请求）
 Bot.express.use(`${WEB_BASE}`, (req, res, next) => {
-  res.set({
-    "X-Frame-Options": "DENY",
+  const headers = {
     "X-Content-Type-Options": "nosniff",
     "X-XSS-Protection": "1; mode=block",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-  })
+  }
+  // 自定义页面通过同源 iframe 加载，需允许被框架嵌入（其余保持 DENY 防点击劫持）
+  if (req.path.startsWith("/api/web-page/")) {
+    headers["X-Frame-Options"] = "SAMEORIGIN"
+  } else {
+    headers["X-Frame-Options"] = "DENY"
+  }
+  res.set(headers)
   next()
 })
 
@@ -2402,6 +2526,32 @@ Bot.express.use(`${WEB_BASE}`, (req, res, next) => {
 // 健康检查
 Bot.express.get(`${WEB_BASE}/api/health`, (req, res) => {
   res.json({ ok: true, time: Date.now() })
+})
+
+// 自定义页面：列表（仅返回前端渲染所需元数据）
+Bot.express.get(`${WEB_BASE}/api/web-pages`, (req, res) => {
+  const list = Bot.webAdapter.getPages().map(p => ({
+    id: p.id, title: p.title, icon: p.icon, type: p.type, priority: p.priority,
+    src: p.src, html: p.html, style: p.style, script: p.script,
+  }))
+  res.json({ pages: list })
+})
+
+// 自定义页面：插件 webadapter/ 下的静态资源（受全局鉴权保护）
+// 用正则捕获 plugin 与后续相对路径，兼容 Express 4/5（避免 * 通配差异）
+const webPageRe = new RegExp('^' + WEB_BASE.replace(/[.+*?^${}()|[\]\\]/g, '\\$&') + '/api/web-page/([^/]+)/(.*)$')
+Bot.express.get(webPageRe, (req, res) => {
+  const plugin = req.params[0]
+  const rel = (req.params[1] || "").replace(/^\/+/, "")
+  if (!plugin || !rel) return res.sendStatus(400)
+  const base = path.join(pluginsRoot, plugin, "webadapter")
+  const filePath = path.resolve(base, rel)
+  // 防目录穿越：必须严格落在插件 webadapter 目录内
+  if (!filePath.startsWith(base + path.sep)) return res.sendStatus(403)
+  const ext = path.extname(filePath).toLowerCase()
+  const allowed = [".html", ".js", ".css", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf", ".map"]
+  if (!allowed.includes(ext)) return res.sendStatus(403)
+  res.sendFile(filePath, err => { if (err) res.sendStatus(404) })
 })
 
 // 登录

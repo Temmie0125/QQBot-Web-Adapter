@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>自定义页面写法</title>
+  <style>
+    .pg-guide { max-width: 880px; margin: 0 auto; padding: 20px 8px 60px; color: #1f2329; line-height: 1.7; font-size: 14px; }
+    .pg-guide h1 { font-size: 24px; margin: 0 0 12px; }
+    .pg-guide h2 { font-size: 19px; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #e6e8ec; }
+    .pg-guide h3 { font-size: 16px; margin: 20px 0 8px; }
+    .pg-guide p { margin: 8px 0; }
+    .pg-guide code { background: #f0f2f5; border-radius: 4px; padding: 1px 5px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; color: #c5302b; }
+    .pg-guide pre { background: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 8px; padding: 12px 14px; overflow: auto; }
+    .pg-guide pre code { background: none; color: #24292f; padding: 0; font-size: 13px; }
+    .pg-guide table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+    .pg-guide th, .pg-guide td { border: 1px solid #e1e4e8; padding: 7px 10px; text-align: left; }
+    .pg-guide th { background: #f6f8fa; font-weight: 600; }
+    .pg-guide blockquote { margin: 10px 0; padding: 6px 12px; border-left: 3px solid #4f6ef7; background: #f5f7ff; color: #455; }
+    .pg-guide ul, .pg-guide ol { margin: 8px 0; padding-left: 22px; }
+    .pg-guide li { margin: 4px 0; }
+    .pg-guide hr { border: none; border-top: 1px solid #e6e8ec; margin: 24px 0; }
+  </style>
+</head>
+<body>
+<div class="pg-guide">
+  <h1>自定义页面写法（WebAdapter 扩展控制台）</h1>
+  <p>QQBot-Web-Adapter 支持在不改动插件主入口的情况下，给 Web 控制台新增自定义页面。页面会出现在左侧导航栏，支持两种注册方式：</p>
+  <ol>
+    <li><b>约定式</b>：在插件目录下新建 <code>webadapter/page.{js,json}</code>（或 <code>pages.{js,json}</code>），导出描述符即可，WebAdapter 开机自动扫描。</li>
+    <li><b>编程式</b>：在代码里调用 <code>Bot.webAdapter.registerPage(pluginName, descriptor)</code>。</li>
+  </ol>
+  <blockquote>约定式最常用；如果你的页面还需要自定义后端接口（API），请同时提供一个 <code>webadapter/index.js</code> 操作模块。</blockquote>
+
+  <h2>一、描述符字段</h2>
+  <p>一个页面描述符是一个对象，支持以下字段：</p>
+  <table>
+    <thead><tr><th>字段</th><th>必填</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>✅</td><td>页面唯一标识，仅允许 <code>^[A-Za-z0-9_-]+$</code>，如 <code>my-page</code>。重复会被覆盖。</td></tr>
+      <tr><td><code>title</code></td><td>✅</td><td>导航栏显示的标题。</td></tr>
+      <tr><td><code>icon</code></td><td>❌</td><td>导航栏图标，任意 emoji，默认 📄。</td></tr>
+      <tr><td><code>html</code></td><td>⚠️</td><td>直接注入的 HTML 片段（纯静态页）。与 <code>src</code> 二选一。</td></tr>
+      <tr><td><code>src</code></td><td>⚠️</td><td>指向 <code>webadapter/</code> 下的 HTML 文件，以 iframe 嵌入。与 <code>html</code> 二选一。</td></tr>
+      <tr><td><code>style</code></td><td>❌</td><td><code>webadapter/</code> 下的 css 文件，注入时按需加载。</td></tr>
+      <tr><td><code>script</code></td><td>❌</td><td><code>webadapter/</code> 下的 js 文件，注入时按需加载。</td></tr>
+      <tr><td><code>priority</code></td><td>❌</td><td>排序优先级，数值越小越靠前，默认 100。</td></tr>
+    </tbody>
+  </table>
+  <p>同时提供 <code>html</code> 和 <code>src</code> 时，<code>src</code> 优先（iframe 模式）。<code>src</code> / <code>style</code> / <code>script</code> 写的是相对 <code>webadapter/</code> 目录的文件名，不要写绝对路径或 <code>../</code>。</p>
+
+  <h2>二、约定式示例</h2>
+
+  <h3>示例 1：纯静态片段（webadapter/page.json）</h3>
+  <pre><code>{
+  "id": "hello",
+  "title": "你好页",
+  "icon": "👋",
+  "html": "&lt;h2&gt;你好，这是自定义页面&lt;/h2&gt;&lt;p&gt;这段 HTML 会直接注入到页面中。&lt;/p&gt;"
+}</code></pre>
+
+  <h3>示例 2：iframe 嵌入独立 HTML（page.json + dash.html）</h3>
+  <pre><code>{
+  "id": "dashboard",
+  "title": "仪表盘",
+  "icon": "📊",
+  "src": "dash.html",
+  "style": "dash.css"
+}</code></pre>
+  <p><code>webadapter/dash.html</code> 是完整 HTML 页面，通过 iframe 嵌入：</p>
+  <pre><code>&lt;!DOCTYPE html&gt;
+&lt;html lang="zh-CN"&gt;
+&lt;head&gt;&lt;meta charset="UTF-8" /&gt;&lt;title&gt;仪表盘&lt;/title&gt;
+&lt;link rel="stylesheet" href="dash.css" /&gt;&lt;/head&gt;
+&lt;body&gt;
+  &lt;h2&gt;我的仪表盘&lt;/h2&gt;
+  &lt;button id="btn"&gt;点我&lt;/button&gt;
+  &lt;script src="dash.js"&gt;&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+  <blockquote>iframe 内的页面由浏览器从 <code>/qqbot-web/api/web-page/&lt;插件名&gt;/&lt;文件&gt;</code> 加载，自带全局登录鉴权，无需自己处理登录。</blockquote>
+
+  <h3>示例 3：导出多个页面（webadapter/pages.js）</h3>
+  <pre><code>export default [
+  { id: "page-a", title: "页面 A", icon: "🅰️", html: "&lt;p&gt;A&lt;/p&gt;", priority: 10 },
+  { id: "page-b", title: "页面 B", icon: "🅱️", src: "b.html", priority: 20 }
+]</code></pre>
+  <p>也可以用 <code>export default { pages: [...] }</code> 的形式；<code>.json</code> 同理用数组或 <code>{ "pages": [...] }</code>。</p>
+
+  <h2>三、编程式注册</h2>
+  <p>适合需要动态生成页面、或在同一处既注册页面又注册 API 的场景：</p>
+  <pre><code>import { Bot } from "yunzai"
+
+export function init(ctx) {
+  Bot.webAdapter.registerPage(ctx.pluginName, {
+    id: "my-page",
+    title: "我的页面",
+    icon: "⚙️",
+    html: "&lt;h2&gt;你好&lt;/h2&gt;"
+  })
+
+  // 也可以批量
+  Bot.webAdapter.registerPages(ctx.pluginName, [
+    { id: "p1", title: "P1", html: "&lt;p&gt;1&lt;/p&gt;" },
+    { id: "p2", title: "P2", html: "&lt;p&gt;2&lt;/p&gt;" }
+  ])
+}</code></pre>
+  <p><code>pluginName</code> 一般用 <code>ctx.pluginName</code>（自动等于插件目录名）；不传时默认归到 <code>external</code>。</p>
+
+  <h2>四、操作模块（页面 + 自定义接口）</h2>
+  <p>如果页面需要后端数据接口，请在该插件下新建 <code>webadapter/index.js</code>，导出 <code>init(ctx)</code>：</p>
+  <pre><code>import { Bot } from "yunzai"
+
+export function init(ctx) {
+  const { apiBase, pluginName } = ctx  // apiBase 形如 /qqbot-web/api
+
+  // 1) 注册一个页面
+  Bot.webAdapter.registerPage(pluginName, {
+    id: "stats",
+    title: "统计",
+    icon: "📈",
+    src: "stats.html",
+    script: "stats.js"
+  })
+
+  // 2) 注册该页面用到的接口
+  Bot.express.get(apiBase + "/stats/data", (req, res) => {
+    res.json({ ok: true, count: 42 })
+  })
+}</code></pre>
+  <p><code>ctx</code> 提供的字段：</p>
+  <table>
+    <thead><tr><th>字段</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>basePath</code></td><td>Web 根路径（不含前导 /），如 <code>qqbot-web</code></td></tr>
+      <tr><td><code>apiBase</code></td><td>API 前缀，如 <code>/qqbot-web/api</code></td></tr>
+      <tr><td><code>pluginName</code></td><td>插件目录名</td></tr>
+      <tr><td><code>pluginDir</code></td><td>插件绝对目录</td></tr>
+      <tr><td><code>logger</code></td><td>日志对象</td></tr>
+    </tbody>
+  </table>
+  <blockquote>WebAdapter 会在开机以及 <code>login</code> / <code>plugins/loaded</code> 事件时自动 import 并调用各插件的 <code>webadapter/index.js</code>，插件主入口 <code>index.js</code> 无需任何改动。参考实现：<code>plugins/replaceButton-plugin/webadapter/</code>。</blockquote>
+
+  <h2>五、静态资源与鉴权</h2>
+  <ul>
+    <li>页面引用的 <code>src</code> / <code>style</code> / <code>script</code> 文件，统一通过 <code>GET /&lt;basePath&gt;/api/web-page/&lt;插件名&gt;/&lt;文件&gt;</code> 提供。</li>
+    <li>这些文件必须位于该插件的 <code>webadapter/</code> 目录内（有防目录穿越校验），允许后缀：html, js, css, json, svg, png, jpg, jpeg, gif, webp, ico, woff, woff2, ttf, map。</li>
+    <li>自定义页面接口与静态资源都受 WebAdapter 的全局登录鉴权保护。</li>
+  </ul>
+
+  <h2>六、生效与调试</h2>
+  <ul>
+    <li>自定义页面在 WebAdapter 启动扫描或收到 <code>login</code> / <code>plugins/loaded</code> 事件时加载。</li>
+    <li>新增 / 修改页面后，一般重启 Yunzai 最稳妥；若只改了已加载页面引用的 HTML/JS/CSS 静态文件，刷新浏览器即可。</li>
+    <li>当前已加载的页面列表可访问 <code>GET /&lt;basePath&gt;/api/web-pages</code> 查看。</li>
+    <li>加载失败会在日志中打印（<code>加载自定义页面失败 ...</code>），按提示修正 <code>id</code> / 路径即可。</li>
+  </ul>
+</div>
+</body>
+</html>

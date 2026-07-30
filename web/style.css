@@ -179,6 +179,15 @@ body {
 .nav-item.active svg { opacity: 1; }
 .nav-item svg { opacity: 0.6; flex-shrink: 0; }
 
+/* 自定义扩展页面的侧边栏图标（emoji） */
+.nav-item .nav-icon {
+  display: inline-flex; width: 20px; height: 20px;
+  align-items: center; justify-content: center;
+  flex-shrink: 0; opacity: 0.6; font-size: 16px; line-height: 1;
+}
+.nav-item.active .nav-icon { opacity: 1; }
+.sidebar.collapsed .nav-item .nav-icon { display: inline-flex; }
+
 /* 侧边栏折叠状态 */
 .sidebar.collapsed { width: 60px; }
 .sidebar.collapsed .nav-item { justify-content: center; padding: 10px 8px; }
@@ -244,6 +253,7 @@ body {
 .content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 .page { display: none; flex: 1; overflow: hidden; }
 .page.active { display: flex; flex-direction: column; }
+.web-page-iframe { flex: 1; width: 100%; border: 0; min-height: 0; background: var(--bg, #fff); }
 
 /* ===== Dashboard ===== */
 .dashboard { padding: 32px; overflow-y: auto; flex: 1; }

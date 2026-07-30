@@ -116,6 +116,85 @@ function addLongPress(el, callback) {
   el.addEventListener("touchmove", () => { if (timer) { clearTimeout(timer); timer = null } })
 }
 
+// ===== 自定义扩展页面（开发者通过 webadapter/page.{js,json} 或 Bot.webAdapter 注册） =====
+const webPagesMap = new Map()
+const webPagesMounted = new Set()
+
+// 拉取自定义页面并动态生成侧边栏项与页面容器
+async function loadWebPages() {
+  try {
+    const res = await fetch(`${API_BASE}/web-pages`)
+    if (!res.ok) return
+    const data = await res.json()
+    const pages = Array.isArray(data.pages) ? data.pages : []
+    const nav = document.querySelector(".sidebar-nav")
+    const spacer = nav ? nav.querySelector(".sidebar-spacer") : null
+    const content = document.getElementById("mainContent")
+    for (const p of pages) {
+      if (webPagesMap.has(p.id)) continue
+      webPagesMap.set(p.id, p)
+
+      if (nav) {
+        const a = document.createElement("a")
+        a.className = "nav-item"
+        a.dataset.page = p.id
+        a.href = `#${p.id}`
+        const icon = document.createElement("span")
+        icon.className = "nav-icon"
+        icon.textContent = p.icon || "📄"
+        const label = document.createElement("span")
+        label.textContent = p.title
+        a.appendChild(icon)
+        a.appendChild(label)
+        a.addEventListener("click", (e) => { e.preventDefault(); navigateTo(p.id) })
+        if (spacer) nav.insertBefore(a, spacer)
+        else nav.appendChild(a)
+      }
+
+      if (content) {
+        const sec = document.createElement("section")
+        sec.className = "page"
+        sec.id = `page-${p.id}`
+        content.appendChild(sec)
+      }
+    }
+    // 若当前 URL hash 指向某个自定义页面，进入后自动挂载
+    const hash = location.hash.replace(/^#/, "")
+    if (hash && webPagesMap.has(hash)) navigateTo(hash)
+  } catch (e) {
+    console.warn("[loadWebPages] 失败:", e)
+  }
+}
+
+// 首次进入自定义页面时挂载内容（iframe 或注入 HTML）
+function mountWebPage(page) {
+  const def = webPagesMap.get(page)
+  if (!def) return
+  const container = document.getElementById(`page-${page}`)
+  if (!container || webPagesMounted.has(page)) return
+  webPagesMounted.add(page)
+  if (def.type === "iframe") {
+    const iframe = document.createElement("iframe")
+    iframe.src = def.src
+    iframe.className = "web-page-iframe"
+    container.appendChild(iframe)
+  } else {
+    container.innerHTML = def.html || ""
+    if (def.style) {
+      const link = document.createElement("link")
+      link.rel = "stylesheet"
+      link.href = def.style
+      document.head.appendChild(link)
+    }
+    if (def.script) {
+      const s = document.createElement("script")
+      s.src = def.script
+      s.async = true
+      document.body.appendChild(s)
+    }
+  }
+}
+
 // ===== 页面导航 =====
 function navigateTo(page) {
   console.log("[navigateTo]", page, "currentBotId:", state.currentBotId)
@@ -127,6 +206,14 @@ function navigateTo(page) {
 
   // 移动端底部导航
   $$(".mobile-nav-item").forEach(el => el.classList.toggle("active", el.dataset.page === page))
+
+  // 自定义扩展页面
+  if (webPagesMap.has(page)) {
+    stopDashboardAutoRefresh()
+    resetChatView()
+    mountWebPage(page)
+    return
+  }
 
   if (page === "messages") {
     stopDashboardAutoRefresh()
@@ -937,7 +1024,6 @@ function renderPrivateChatList() {
     ? ordered.map(u => {
         const avatarSrc = u.avatar ? `style="background-image:url(${escHtml(u.avatar)})"` : ""
         const isPinned = pinSet.has(String(u.user_id))
-        const pinBadge = isPinned ? '<span class="pin-badge" title="已置顶">📌</span>' : ''
         const blBadge = u.is_blacklisted ? '<span class="blacklist-badge">拉黑</span>' : ''
         const safeOpenid = escHtml(u.openid || "")
         const safeUnionid = escHtml(u.unionid || "")
@@ -948,7 +1034,7 @@ function renderPrivateChatList() {
              data-unionid="${safeUnionid}">
           <div class="group-avatar user-avatar" ${avatarSrc}>${u.avatar ? '' : escHtml((u.nickname || String(u.user_id))[0])}</div>
           <div class="group-item-info">
-            <div class="group-item-name-row"><div class="group-item-name">${escHtml(u.nickname || String(u.user_id))}</div>${pinBadge}${blBadge}</div>
+            <div class="group-item-name-row"><div class="group-item-name">${escHtml(u.nickname || String(u.user_id))}</div>${blBadge}</div>
             <div class="group-item-id">${escHtml(String(u.user_id))}</div>
           </div>
         </div>
@@ -7230,6 +7316,7 @@ async function init() {
   connectWebSocket()
   console.log("[init] 事件绑定完成，开始 loadBots")
   await loadBots()
+  loadWebPages()
   loadBlacklistData()
   console.log("[init] loadBots 完成, currentBotId:", state.currentBotId, "currentPage:", state.currentPage)
   if (state.currentBotId) {
