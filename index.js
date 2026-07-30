@@ -306,6 +306,8 @@ async function scanWebPages() {
               pluginName: ent.name,
               pluginDir: path.join(pluginsRoot, ent.name),
               logger,
+              requireAuth: apiAuthGuard,
+              registerApi: (method, route, ...handlers) => Bot.webAdapter.registerApi(method, route, ...handlers),
             })
             webInited.add(opPath)
             logger.mark(`[QQBot-Web] 已初始化 ${ent.name} 的 web 操作模块`)
@@ -321,12 +323,54 @@ async function scanWebPages() {
   }
 }
 
+// ========== WebAdapter 接口鉴权（统一防护） ==========
+// 所有 /api/* 请求（含「约定式操作模块」注册的插件接口）都必须通过：
+//   1) 公网访问控制（publicAccess 关闭时仅放行内网 IP）
+//   2) 登录鉴权（未登录返回 401）
+// 插件既可依赖下方的前置中间件自动生效，也可通过 Bot.webAdapter.requireAuth /
+// registerApi 显式挂载，确保与全局策略一致。
+async function apiAuthGuard(req, res, next) {
+  const fullPath = (req.baseUrl || "") + (req.path || "")
+  const loginFree = new Set([
+    `${WEB_BASE}/api/login`,
+    `${WEB_BASE}/api/logout`,
+    `${WEB_BASE}/api/login/captcha`,
+    `${WEB_BASE}/api/login/status`,
+  ])
+  if (loginFree.has(fullPath)) return next()
+  if (config.login?.enabled === false) return next()
+  if (config.publicAccess !== true) {
+    if (fullPath === `${WEB_BASE}/api/health`) return next()
+    const ip = getClientIp(req)
+    if (!isPrivateIp(ip)) {
+      return res.status(403).json({ error: "公网访问已关闭，请通过内网访问控制台" })
+    }
+  }
+  if (await getSession(req)) return next()
+  return res.status(401).json({ error: "未登录" })
+}
+
 // 编程式注册接口（供其他插件调用）
 Bot.webAdapter = Bot.webAdapter || {}
 Bot.webAdapter.registerPage = (pluginName, def) => registerWebPage(pluginName, def)
 Bot.webAdapter.registerPages = (pluginName, arr) => (Array.isArray(arr) ? arr : []).forEach(d => registerWebPage(pluginName, d))
 Bot.webAdapter.getPages = () => [...webPages.values()].sort((a, b) => a.priority - b.priority)
 Bot.webAdapter.scan = () => scanWebPages()
+// 接口鉴权中间件（供插件在自定义路由中复用）
+Bot.webAdapter.requireAuth = apiAuthGuard
+// 自动鉴权注册：registerApi(method, route, ...handlers)
+//   route 可为相对路径（/foo）或完整路径（/web/api/foo），均自动套用 apiAuthGuard
+Bot.webAdapter.registerApi = (method, route, ...handlers) => {
+  if (!Bot.express || typeof Bot.express[method] !== "function") return
+  const full = String(route).startsWith("/")
+    ? `${WEB_BASE}/api${String(route)}`
+    : route
+  Bot.express[method](full, apiAuthGuard, ...handlers)
+}
+
+// 前置鉴权中间件：必须在 scanWebPages() 之前注册，
+// 否则插件在 init() 中注册的路由会早于全局鉴权中间件而绕过校验。
+Bot.express.use(`${WEB_BASE}/api`, apiAuthGuard)
 
 // 开机扫描（插件文件已全在磁盘，与加载顺序无关）；bot 上线后再扫一次以纳入编程式注册
 scanWebPages()

@@ -126,7 +126,7 @@ export function init(ctx) {
 import { Bot } from "yunzai"
 
 export function init(ctx) {
-  const { apiBase, pluginName } = ctx
+  const { apiBase, pluginName, registerApi } = ctx
   // apiBase 形如 /qqbot-web/api
 
   // 1) 注册一个页面
@@ -138,8 +138,10 @@ export function init(ctx) {
     script: "stats.js"
   })
 
-  // 2) 注册该页面用到的接口
-  Bot.express.get(`${apiBase}/stats/data`, (req, res) => {
+  // 2) 注册该页面用到的接口（registerApi 会自动套用登录鉴权）
+  //    第一个参数可用 "get" / "post" / "delete" / "patch"；
+  //    route 可为相对路径（/foo）或完整路径（/web/api/foo）
+  registerApi("get", "/stats/data", (req, res) => {
     res.json({ ok: true, count: 42 })
   })
 }
@@ -154,12 +156,19 @@ export function init(ctx) {
 | `pluginName` | 插件目录名 |
 | `pluginDir` | 插件绝对目录 |
 | `logger` | 日志对象 |
+| `requireAuth` | 鉴权中间件，可挂到自定义路由上（已登录放行，未登录返回 401） |
+| `registerApi` | `(method, route, ...handlers)` 自动鉴权的接口注册器，route 可为相对 `/foo` 或完整路径 |
+
+> **接口鉴权（重要）**：所有 `/api/*` 请求（含各插件操作模块注册的接口）都会被 WebAdapter
+> 强制加上**公网限制 + 登录鉴权**。因此**请务必使用 `ctx.registerApi` 注册接口**（或自行
+> `Bot.express` 注册后 `app.use(requireAuth)`），不要裸注册 `Bot.express.get(...)`——否则该接口会在
+> 开机扫描阶段被注册到全局鉴权中间件之前而绕过后端校验。
 
 > WebAdapter 会在开机以及 `login` / `plugins/loaded` 事件时自动 `import` 并调用
 > 各插件的 `webadapter/index.js`，**插件主入口 `index.js` 无需任何改动**。
 
 参考实现：本仓库 `plugins/replaceButton-plugin/webadapter/` 就是一个完整的操作模块
-（既注册了管理页面接口，又注册了页面本身）。
+（既注册了管理页面接口，又注册了页面本身，且接口均通过 `registerApi` 受鉴权保护）。
 
 ---
 
@@ -169,7 +178,8 @@ export function init(ctx) {
   `GET /<basePath>/api/web-page/<插件名>/<文件>` 提供。
 - 这些文件必须位于**该插件的 `webadapter/` 目录内**（有防目录穿越校验），
   允许的后缀：`html, js, css, json, svg, png, jpg, jpeg, gif, webp, ico, woff, woff2, ttf, map`。
-- 自定义页面接口与静态资源都受 WebAdapter 的全局登录鉴权保护。
+- 自定义页面接口与静态资源都受 WebAdapter 的登录鉴权保护：所有 `/api/*`（含插件接口）
+  都必须通过公网限制 + 登录校验；未登录访问管理接口会收到 `401`，未登录访问页面会跳转登录页。
 
 ---
 
