@@ -3,6 +3,12 @@
 QQBot-Web-Adapter 支持在不改动插件主入口的情况下，给 Web 控制台新增自定义页面。
 页面会出现在左侧导航栏，统一通过插件下的 **`webadapter/index.js` 操作模块** 扩展：
 
+> **目录约定（重要）**：这里的 `webadapter/` 指的是**你自己的插件目录**下的子目录，即
+> `plugins/<你的插件名>/webadapter/`。例如插件 `replaceButton-plugin` 就放在
+> `plugins/replaceButton-plugin/webadapter/index.js`，插件 `my-plugin` 就放在
+> `plugins/my-plugin/webadapter/index.js`。**不是**放在 QQBot-Web-Adapter 插件目录里，
+> 也不是全局任意位置。WebAdapter 开机时会自动扫描 `plugins/*/webadapter/` 并加载其中的 `index.js`。
+
 - 在 `webadapter/index.js` 中 `export function init(ctx)`，用 `ctx.registerPage(...)` 注册页面，
   用 `ctx.registerApi(...)` 注册页面所需的数据接口（自动带登录鉴权）。
 - 若只是纯静态展示页，可用更轻量的「约定式」`webadapter/page.{js,json}`（或 `pages.{js,json}`）

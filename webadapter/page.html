@@ -26,6 +26,7 @@
 <div class="pg-guide">
   <h1>自定义页面写法（WebAdapter 扩展控制台）</h1>
   <p>QQBot-Web-Adapter 支持在不改动插件主入口的情况下，给 Web 控制台新增自定义页面。页面会出现在左侧导航栏，统一通过插件下的 <b><code>webadapter/index.js</code> 操作模块</b> 扩展：</p>
+  <blockquote><b>目录约定（重要）</b>：这里的 <code>webadapter/</code> 指的是<b>你自己的插件目录</b>下的子目录，即 <code>plugins/&lt;你的插件名&gt;/webadapter/</code>。例如插件 <code>replaceButton-plugin</code> 就放在 <code>plugins/replaceButton-plugin/webadapter/index.js</code>，插件 <code>my-plugin</code> 就放在 <code>plugins/my-plugin/webadapter/index.js</code>。<b>不是</b>放在 QQBot-Web-Adapter 插件目录里，也不是全局任意位置。WebAdapter 开机时会自动扫描 <code>plugins/*/webadapter/</code> 并加载其中的 <code>index.js</code>。</blockquote>
   <ul>
     <li>在 <code>webadapter/index.js</code> 中 <code>export function init(ctx)</code>，用 <code>ctx.registerPage(...)</code> 注册页面，用 <code>ctx.registerApi(...)</code> 注册页面所需的数据接口（自动带登录鉴权）。</li>
     <li>若只是纯静态展示页，可用更轻量的「约定式」<code>webadapter/page.{js,json}</code>（或 <code>pages.{js,json}</code>）只导出页面描述符，无需写 <code>init</code>。</li>
