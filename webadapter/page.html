@@ -136,6 +136,14 @@ export function init(ctx) {
   </table>
   <blockquote>若不想用 <code>ctx</code> 上的方法，也可直接调用 <code>Bot.webAdapter.registerPage(pluginName, def)</code> / <code>Bot.webAdapter.registerApi(method, route, ...handlers)</code>，效果相同。</blockquote>
 
+  <blockquote><b>路径安全（重要）</b>：凡是接口内部<b>读取或改动本地文件</b>（如 <code>fs.readFile</code> / <code>writeFile</code> / <code>unlink</code> 拼接 <code>req.params</code>、<code>req.query</code>、<code>req.body</code> 中的文件名/路径），都必须做好<b>目录穿越防护</b>，否则攻击者可借 <code>/api/...</code> 接口越权读写插件目录甚至系统文件。建议统一遵守：
+    <ol>
+      <li><b>过滤危险字符</b>：用白名单只保留 <code>[\w一-龥.\-]</code> 之外的字符替换为 <code>_</code>，把 <code>/</code> <code>\</code> 等路径分隔符去掉；</li>
+      <li><b>显式拒绝 <code>..</code></b>：若输入含 <code>..</code> 子串、为空或后缀不合法（如非 <code>.json</code>），直接返回 <code>400</code>；</li>
+      <li><b>拼接后兜底校验</b>：始终用 <code>path.join(baseDir, name)</code> 并校验结果以 <code>baseDir + path.sep</code> 开头，切勿直接把用户输入拼进路径或用 <code>path.resolve</code> 解析绝对路径。</li>
+    </ol>
+  </blockquote>
+
   <h2>四、完整示例（以 replaceButton 为例）</h2>
   <p>下面是本仓库 <code>plugins/replaceButton-plugin/webadapter/index.js</code> 的精简版，展示「页面 + 接口」一起注册的完整写法（新风格）：</p>
   <pre><code>import { Bot } from "yunzai"
@@ -159,7 +167,7 @@ export function init(ctx) {
   registerApi("patch",  "/replace-button/rules/:file",  (req, res) => { /* 开关 / 改描述 */ })
 }</code></pre>
   <blockquote><b>接口鉴权（重要）</b>：所有 <code>/api/*</code> 请求（含各插件操作模块注册的接口）都会被 WebAdapter 强制加上<b>公网限制 + 登录鉴权</b>。因此<b>请务必使用 <code>ctx.registerApi</code> 注册接口</b>（或自行 <code>Bot.express</code> 注册后 <code>app.use(requireAuth)</code>），不要裸注册 <code>Bot.express.get(...)</code>——否则该接口会在开机扫描阶段被注册到全局鉴权中间件之前而绕过后端校验。</blockquote>
-  <blockquote>完整可运行实现见：<code>plugins/replaceButton-plugin/webadapter/</code>（既注册了管理页面，又注册了接口，且接口均通过 <code>registerApi</code> 受鉴权保护，写操作成功后还会自动重载内存规则）。</blockquote>
+  <blockquote>完整可运行实现见：<code>plugins/replaceButton-plugin/webadapter/</code>（既注册了管理页面，又注册了接口，且接口均通过 <code>registerApi</code> 受鉴权保护，写操作成功后还会自动重载内存规则）。其 <code>rules</code> 相关接口即为<b>读取/改动本地文件 + 路径穿越防护</b>的参考实现：文件名经白名单过滤、显式拒绝 <code>..</code>、拼接后用 <code>startsWith(buttonsDir + sep)</code> 兜底校验，可照此写法保护你自己的文件接口。</blockquote>
 
   <h2>五、静态资源与鉴权</h2>
   <ul>

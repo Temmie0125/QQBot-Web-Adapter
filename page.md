@@ -154,6 +154,14 @@ export function init(ctx) {
 > 若不想用 `ctx` 上的方法，也可直接调用 `Bot.webAdapter.registerPage(pluginName, def)` /
 > `Bot.webAdapter.registerApi(method, route, ...handlers)`，效果相同。
 
+> **路径安全（重要）**：凡是接口内部**读取或改动本地文件**（如 `fs.readFile` / `writeFile` /
+> `unlink` 拼接 `req.params`、`req.query`、`req.body` 中的文件名/路径），都必须做好**目录穿越防护**，
+> 否则攻击者可借 `/api/...` 接口越权读写插件目录甚至系统文件。建议统一遵守：
+> 1. **过滤危险字符**：用白名单只保留 `[\\w一-龥.\\-]` 之外的字符替换为 `_`，把 `/` `\\` 等路径分隔符去掉；
+> 2. **显式拒绝 `..`**：若输入含 `..` 子串、为空或后缀不合法（如非 `.json`），直接返回 `400`；
+> 3. **拼接后兜底校验**：始终用 `path.join(baseDir, name)` 并校验结果以 `baseDir + path.sep` 开头，
+>    切勿直接把用户输入拼进路径或用 `path.resolve` 解析绝对路径。
+
 ---
 
 ## 四、完整示例（以 replaceButton 为例）
@@ -193,6 +201,8 @@ export function init(ctx) {
 
 完整可运行实现见：`plugins/replaceButton-plugin/webadapter/`（既注册了管理页面，又注册了接口，
 且接口均通过 `registerApi` 受鉴权保护，写操作成功后还会自动重载内存规则）。
+其 `rules` 相关接口即为**读取/改动本地文件 + 路径穿越防护**的参考实现：文件名经白名单过滤、显式拒绝
+`..`、拼接后用 `startsWith(buttonsDir + sep)` 兜底校验，可照此写法保护你自己的文件接口。
 
 ---
 
