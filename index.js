@@ -2536,6 +2536,9 @@ Bot.express.get(`${WEB_BASE}/api/bot/:selfId/local-media`, async (req, res) => {
     // 安全检查：严格限制仅允许访问 data/imgs/ 目录
     const pluginDir = path.join(path.dirname(__dirname), "QQBot-Plugin")
     const imgsDir = path.join(pluginDir, "data", "imgs")
+    // saveMediaFile 返回的路径已包含 data/imgs/ 前缀，需剥离后再拼接
+    const mediaPrefix = `data${path.sep}imgs${path.sep}`
+    if (relNorm.startsWith(mediaPrefix)) relNorm = relNorm.slice(mediaPrefix.length)
     const filePath = path.join(imgsDir, relNorm)
 
     if (filePath !== imgsDir && !filePath.startsWith(imgsDir + path.sep)) return res.status(403).end("forbidden")
