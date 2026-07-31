@@ -25,12 +25,13 @@
 <body>
 <div class="pg-guide">
   <h1>自定义页面写法（WebAdapter 扩展控制台）</h1>
-  <p>QQBot-Web-Adapter 支持在不改动插件主入口的情况下，给 Web 控制台新增自定义页面。页面会出现在左侧导航栏，支持两种注册方式：</p>
-  <ol>
-    <li><b>约定式</b>：在插件目录下新建 <code>webadapter/page.{js,json}</code>（或 <code>pages.{js,json}</code>），导出描述符即可，WebAdapter 开机自动扫描。</li>
-    <li><b>编程式</b>：在代码里调用 <code>Bot.webAdapter.registerPage(pluginName, descriptor)</code>。</li>
-  </ol>
-  <blockquote>约定式最常用；如果你的页面还需要自定义后端接口（API），请同时提供一个 <code>webadapter/index.js</code> 操作模块。</blockquote>
+  <p>QQBot-Web-Adapter 支持在不改动插件主入口的情况下，给 Web 控制台新增自定义页面。页面会出现在左侧导航栏，统一通过插件下的 <b><code>webadapter/index.js</code> 操作模块</b> 扩展：</p>
+  <ul>
+    <li>在 <code>webadapter/index.js</code> 中 <code>export function init(ctx)</code>，用 <code>ctx.registerPage(...)</code> 注册页面，用 <code>ctx.registerApi(...)</code> 注册页面所需的数据接口（自动带登录鉴权）。</li>
+    <li>若只是纯静态展示页，可用更轻量的「约定式」<code>webadapter/page.{js,json}</code>（或 <code>pages.{js,json}</code>）只导出页面描述符，无需写 <code>init</code>。</li>
+  </ul>
+  <blockquote>WebAdapter 会在开机以及 <code>login</code> / <code>plugins/loaded</code> 事件时自动发现并调用各插件的 <code>webadapter/index.js</code>，<b>插件主入口 <code>index.js</code> 无需任何改动</b>。</blockquote>
+  <blockquote><b>鉴权（重要）</b>：所有 <code>/api/*</code> 请求（含各插件操作模块注册的接口）都会被 WebAdapter 强制加上公网限制 + 登录鉴权。请务必用 <code>ctx.registerApi</code> 注册接口（或自行 <code>Bot.express</code> 注册后 <code>app.use(requireAuth)</code>），不要裸注册 <code>Bot.express.get(...)</code>。</blockquote>
 
   <h2>一、描述符字段</h2>
   <p>一个页面描述符是一个对象，支持以下字段：</p>
@@ -49,7 +50,9 @@
   </table>
   <p>同时提供 <code>html</code> 和 <code>src</code> 时，<code>src</code> 优先（iframe 模式）。<code>src</code> / <code>style</code> / <code>script</code> 写的是相对 <code>webadapter/</code> 目录的文件名，不要写绝对路径或 <code>../</code>。</p>
 
-  <h2>二、约定式示例</h2>
+  <h2>二、约定式：纯静态页面快捷方式（page.json / pages.json）</h2>
+  <p>适合<b>不需要后端接口</b>的纯展示页。在插件目录下直接放描述符文件，WebAdapter 开机自动扫描，无需写 <code>init</code>。</p>
+  <blockquote>注意：约定式只能注册「页面」本身，不能注册数据接口。若页面需要后端数据，请用下方「三、操作模块注册」的方式写 <code>webadapter/index.js</code>。</blockquote>
 
   <h3>示例 1：纯静态片段（webadapter/page.json）</h3>
   <pre><code>{
@@ -87,48 +90,36 @@
 ]</code></pre>
   <p>也可以用 <code>export default { pages: [...] }</code> 的形式；<code>.json</code> 同理用数组或 <code>{ "pages": [...] }</code>。</p>
 
-  <h2>三、编程式注册</h2>
-  <p>适合需要动态生成页面、或在同一处既注册页面又注册 API 的场景：</p>
+  <h2>三、操作模块注册（推荐：页面 + 接口一起）</h2>
+  <p>新增一个 <b><code>webadapter/index.js</code></b>，导出 <code>init(ctx)</code>，即可在同一个地方注册页面和它所需的接口。这是自定义页面（尤其带数据的页面）的<b>推荐写法</b>：</p>
   <pre><code>import { Bot } from "yunzai"
 
 export function init(ctx) {
-  Bot.webAdapter.registerPage(ctx.pluginName, {
+  const { pluginName, registerPage, registerApi } = ctx
+
+  // 1) 注册页面（ctx.registerPage 第一个参数就是插件名，已自动填好）
+  registerPage({
     id: "my-page",
     title: "我的页面",
     icon: "⚙️",
-    html: "&lt;h2&gt;你好&lt;/h2&gt;"
+    src: "dash.html",   // 指向 webadapter/ 下的 HTML（iframe 嵌入）
+    script: "dash.js"
   })
 
-  // 也可以批量
-  Bot.webAdapter.registerPages(ctx.pluginName, [
+  // 2) 注册该页面用到的接口（registerApi 自动套用登录鉴权）
+  //    第一个参数可用 "get" / "post" / "delete" / "patch"；
+  //    route 可为相对路径（/foo）或完整路径（/web/api/foo）
+  registerApi("get", "/my-page/data", (req, res) => {
+    res.json({ ok: true, count: 42 })
+  })
+
+  // 也可以批量注册多个页面
+  registerPages([
     { id: "p1", title: "P1", html: "&lt;p&gt;1&lt;/p&gt;" },
     { id: "p2", title: "P2", html: "&lt;p&gt;2&lt;/p&gt;" }
   ])
 }</code></pre>
-  <p><code>pluginName</code> 一般用 <code>ctx.pluginName</code>（自动等于插件目录名）；不传时默认归到 <code>external</code>。</p>
-
-  <h2>四、操作模块（页面 + 自定义接口）</h2>
-  <p>如果页面需要后端数据接口，请在该插件下新建 <code>webadapter/index.js</code>，导出 <code>init(ctx)</code>：</p>
-  <pre><code>import { Bot } from "yunzai"
-
-export function init(ctx) {
-  const { apiBase, pluginName } = ctx  // apiBase 形如 /qqbot-web/api
-
-  // 1) 注册一个页面
-  Bot.webAdapter.registerPage(pluginName, {
-    id: "stats",
-    title: "统计",
-    icon: "📈",
-    src: "stats.html",
-    script: "stats.js"
-  })
-
-  // 2) 注册该页面用到的接口
-  Bot.express.get(apiBase + "/stats/data", (req, res) => {
-    res.json({ ok: true, count: 42 })
-  })
-}</code></pre>
-  <p><code>ctx</code> 提供的字段：</p>
+  <p><code>ctx</code> 在页面 / 接口注册时提供的字段：</p>
   <table>
     <thead><tr><th>字段</th><th>说明</th></tr></thead>
     <tbody>
@@ -137,15 +128,44 @@ export function init(ctx) {
       <tr><td><code>pluginName</code></td><td>插件目录名</td></tr>
       <tr><td><code>pluginDir</code></td><td>插件绝对目录</td></tr>
       <tr><td><code>logger</code></td><td>日志对象</td></tr>
+      <tr><td><code>requireAuth</code></td><td>鉴权中间件，可挂到自定义路由上（已登录放行，未登录返回 401）</td></tr>
+      <tr><td><code>registerApi</code></td><td><code>(method, route, ...handlers)</code> 自动鉴权的接口注册器</td></tr>
+      <tr><td><code>registerPage</code></td><td><code>(def)</code> 注册单个页面（等价于 <code>Bot.webAdapter.registerPage(pluginName, def)</code>）</td></tr>
+      <tr><td><code>registerPages</code></td><td><code>(arr)</code> 批量注册页面</td></tr>
     </tbody>
   </table>
-  <blockquote>WebAdapter 会在开机以及 <code>login</code> / <code>plugins/loaded</code> 事件时自动 import 并调用各插件的 <code>webadapter/index.js</code>，插件主入口 <code>index.js</code> 无需任何改动。参考实现：<code>plugins/replaceButton-plugin/webadapter/</code>。</blockquote>
+  <blockquote>若不想用 <code>ctx</code> 上的方法，也可直接调用 <code>Bot.webAdapter.registerPage(pluginName, def)</code> / <code>Bot.webAdapter.registerApi(method, route, ...handlers)</code>，效果相同。</blockquote>
+
+  <h2>四、完整示例（以 replaceButton 为例）</h2>
+  <p>下面是本仓库 <code>plugins/replaceButton-plugin/webadapter/index.js</code> 的精简版，展示「页面 + 接口」一起注册的完整写法（新风格）：</p>
+  <pre><code>import { Bot } from "yunzai"
+
+export function init(ctx) {
+  const { pluginName, registerPage, registerApi } = ctx
+
+  // 1) 注册管理页面（iframe 嵌入 webadapter/manage.html）
+  registerPage({
+    id: "replace-button",
+    title: "按钮替换",
+    icon: "🔘",
+    src: "manage.html",
+    script: "manage.js"
+  })
+
+  // 2) 注册该页面用到的接口，全部走 registerApi（自动套用登录鉴权）
+  registerApi("get",    "/replace-button/rules",        (_req, res) => { /* 读取规则文件 */ })
+  registerApi("post",   "/replace-button/rules",        (req, res) => { /* 新增 / 覆盖规则 */ })
+  registerApi("delete", "/replace-button/rules/:file",  (req, res) => { /* 删除规则 */ })
+  registerApi("patch",  "/replace-button/rules/:file",  (req, res) => { /* 开关 / 改描述 */ })
+}</code></pre>
+  <blockquote><b>接口鉴权（重要）</b>：所有 <code>/api/*</code> 请求（含各插件操作模块注册的接口）都会被 WebAdapter 强制加上<b>公网限制 + 登录鉴权</b>。因此<b>请务必使用 <code>ctx.registerApi</code> 注册接口</b>（或自行 <code>Bot.express</code> 注册后 <code>app.use(requireAuth)</code>），不要裸注册 <code>Bot.express.get(...)</code>——否则该接口会在开机扫描阶段被注册到全局鉴权中间件之前而绕过后端校验。</blockquote>
+  <blockquote>完整可运行实现见：<code>plugins/replaceButton-plugin/webadapter/</code>（既注册了管理页面，又注册了接口，且接口均通过 <code>registerApi</code> 受鉴权保护，写操作成功后还会自动重载内存规则）。</blockquote>
 
   <h2>五、静态资源与鉴权</h2>
   <ul>
     <li>页面引用的 <code>src</code> / <code>style</code> / <code>script</code> 文件，统一通过 <code>GET /&lt;basePath&gt;/api/web-page/&lt;插件名&gt;/&lt;文件&gt;</code> 提供。</li>
     <li>这些文件必须位于该插件的 <code>webadapter/</code> 目录内（有防目录穿越校验），允许后缀：html, js, css, json, svg, png, jpg, jpeg, gif, webp, ico, woff, woff2, ttf, map。</li>
-    <li>自定义页面接口与静态资源都受 WebAdapter 的全局登录鉴权保护。</li>
+    <li>自定义页面接口与静态资源都受 WebAdapter 的登录鉴权保护：所有 <code>/api/*</code>（含插件接口）都必须通过公网限制 + 登录校验；未登录访问管理接口会收到 <code>401</code>，未登录访问页面会跳转登录页。</li>
   </ul>
 
   <h2>六、生效与调试</h2>

@@ -308,21 +308,25 @@ async function scanWebPages() {
               logger,
               requireAuth: apiAuthGuard,
               registerApi: (method, route, ...handlers) => Bot.webAdapter.registerApi(method, route, ...handlers),
+              registerPage: (def) => registerWebPage(ent.name, def),
+              registerPages: (arr) => (Array.isArray(arr) ? arr : []).forEach(d => registerWebPage(ent.name, d)),
             })
             webInited.add(opPath)
-            logger.mark(`[QQBot-Web] 已初始化 ${ent.name} 的 web 操作模块`)
+            logger.info(logger.green(`[QQBot-Web] 已初始化 ${ent.name} 的 web 操作模块`))
           }
         } catch (e) {
           logger.error(`[QQBot-Web] 初始化 ${ent.name} 的 web 操作模块失败:`, e.message)
         }
       }
     }
-    logger.mark(`[QQBot-Web] 已扫描到 ${webPages.size} 个自定义页面`)
+    logger.info(logger.green(`[QQBot-Web] 已扫描到 ${webPages.size} 个自定义页面`))
   } catch (e) {
     logger.error("[QQBot-Web] 扫描自定义页面出错:", e)
   }
 }
 
+// 开机扫描（插件文件已全在磁盘，与加载顺序无关）；bot 上线后再扫一次以纳入编程式注册
+scanWebPages()
 // ========== WebAdapter 接口鉴权（统一防护） ==========
 // 所有 /api/* 请求（含「约定式操作模块」注册的插件接口）都必须通过：
 //   1) 公网访问控制（publicAccess 关闭时仅放行内网 IP）
@@ -372,8 +376,6 @@ Bot.webAdapter.registerApi = (method, route, ...handlers) => {
 // 否则插件在 init() 中注册的路由会早于全局鉴权中间件而绕过校验。
 Bot.express.use(`${WEB_BASE}/api`, apiAuthGuard)
 
-// 开机扫描（插件文件已全在磁盘，与加载顺序无关）；bot 上线后再扫一次以纳入编程式注册
-scanWebPages()
 ;["login", "plugins/loaded"].forEach(ev => {
   if (typeof Bot.on === "function") {
     try { Bot.on(ev, () => { try { scanWebPages() } catch {} }) } catch {}
