@@ -230,6 +230,8 @@ const WS_PATH = `${WEB_BASE_PREFIX}-ws`
 //   - script/style ：webadapter/ 下的 js/css（注入时按需加载）
 const pluginsRoot = path.dirname(QQBT_PLUGIN_DIR)
 const webPages = new Map()
+// 每个插件声明过可被 /api/web-page 访问的文件相对路径白名单（按 plugin 分组）
+const webPageAllowed = new Map()
 // 已初始化的「操作模块」路径，避免 login / plugins/loaded 重复扫描时重复初始化
 const webInited = new Set()
 
@@ -264,6 +266,15 @@ function registerWebPage(pluginName, def) {
   if (!p) return false
   if (webPages.has(p.id)) logger.warn(`[QQBot-Web] 自定义页面 id 冲突，已覆盖: ${p.id}`)
   webPages.set(p.id, p)
+  // 收集该插件声明过可被 web-page 接口访问的文件相对路径（src/style/script）
+  const plugin = p.plugin
+  if (plugin) {
+    if (!webPageAllowed.has(plugin)) webPageAllowed.set(plugin, new Set())
+    const set = webPageAllowed.get(plugin)
+    for (const f of [def.src, def.style, def.script]) {
+      if (f) set.add(String(f).replace(/^\/+/, ""))
+    }
+  }
   return true
 }
 
@@ -2510,15 +2521,24 @@ Bot.express.get(`${WEB_BASE}/api/bot/:selfId/image-proxy`, async (req, res) => {
 // 严格限制：仅允许 data/imgs/ 目录
 Bot.express.get(`${WEB_BASE}/api/bot/:selfId/local-media`, async (req, res) => {
   try {
-    const relPath = req.query.path
-    if (!relPath || relPath.includes('..')) return res.status(400).end("invalid path")
+    const rawRel = req.query.path
+    if (!rawRel) return res.status(400).end("invalid path")
+
+    // 解码并拒绝任何目录穿越 / 绝对路径
+    let rel
+    try { rel = decodeURIComponent(rawRel).split(/[?#]/)[0] } catch { return res.status(400).end("invalid path") }
+    let relNorm
+    try { relNorm = path.normalize(rel) } catch { return res.status(400).end("invalid path") }
+    if (relNorm === "" || relNorm.startsWith("/") || relNorm.startsWith("\\") || relNorm.split(/[\\/]/).includes("..")) {
+      return res.status(403).end("forbidden")
+    }
 
     // 安全检查：严格限制仅允许访问 data/imgs/ 目录
     const pluginDir = path.join(path.dirname(__dirname), "QQBot-Plugin")
     const imgsDir = path.join(pluginDir, "data", "imgs")
-    const filePath = path.resolve(pluginDir, relPath)
+    const filePath = path.join(imgsDir, relNorm)
 
-    if (!filePath.startsWith(imgsDir + path.sep)) return res.status(403).end("forbidden")
+    if (filePath !== imgsDir && !filePath.startsWith(imgsDir + path.sep)) return res.status(403).end("forbidden")
 
     // 检查文件是否存在
     await fs.access(filePath)
@@ -2585,18 +2605,43 @@ Bot.express.get(`${WEB_BASE}/api/web-pages`, (req, res) => {
 
 // 自定义页面：插件 webadapter/ 下的静态资源（受全局鉴权保护）
 // 用正则捕获 plugin 与后续相对路径，兼容 Express 4/5（避免 * 通配差异）
+// 安全：严格防目录穿越 + 后缀白名单，禁止读到插件 webadapter/ 之外或其它文件
 const webPageRe = new RegExp('^' + WEB_BASE.replace(/[.+*?^${}()|[\]\\]/g, '\\$&') + '/api/web-page/([^/]+)/(.*)$')
 Bot.express.get(webPageRe, (req, res) => {
-  const plugin = req.params[0]
-  const rel = (req.params[1] || "").replace(/^\/+/, "")
-  if (!plugin || !rel) return res.sendStatus(400)
+  const rawPlugin = req.params[0]
+  const rawRel = req.params[1] || ""
+
+  // 1) plugin 段必须是合法目录名（解码后仍需匹配，禁止 ../、编码穿越、绝对路径）
+  let plugin
+  try { plugin = decodeURIComponent(rawPlugin) } catch { return res.sendStatus(400) }
+  if (!/^[\w.-]+$/.test(plugin) || plugin === "." || plugin === "..") return res.sendStatus(400)
+
+  // 2) rel 解码，禁止查询串/片段混入与目录穿越
+  let rel
+  try { rel = decodeURIComponent(rawRel).split(/[?#]/)[0] } catch { return res.sendStatus(400) }
+  rel = rel.replace(/^\/+/, "")
+
+  // 3) 规范化为相对路径，显式拒绝任何 .. / 绝对段 / 空路径
+  let relNorm
+  try { relNorm = path.normalize(rel) } catch { return res.sendStatus(400) }
+  if (relNorm === "" || relNorm.startsWith("/") || relNorm.startsWith("\\") || relNorm.split(/[\\/]/).includes("..")) {
+    return res.sendStatus(403)
+  }
+
+  // 3.5) 白名单校验：只允许访问该插件声明过的 src/style/script 文件，其余一律拒绝
+  const allowed = webPageAllowed.get(plugin)
+  if (!allowed || !allowed.has(relNorm)) return res.sendStatus(403)
+
+  // 4) 用 path.join 强制拼接（会自动再次规范化），并校验严格落在插件 webadapter 目录内
   const base = path.join(pluginsRoot, plugin, "webadapter")
-  const filePath = path.resolve(base, rel)
-  // 防目录穿越：必须严格落在插件 webadapter 目录内
-  if (!filePath.startsWith(base + path.sep)) return res.sendStatus(403)
+  const filePath = path.join(base, relNorm)
+  if (filePath !== base && !filePath.startsWith(base + path.sep)) return res.sendStatus(403)
+
+  // 5) 后缀白名单
   const ext = path.extname(filePath).toLowerCase()
-  const allowed = [".html", ".js", ".css", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf", ".map"]
-  if (!allowed.includes(ext)) return res.sendStatus(403)
+  const extAllowed = [".html", ".js", ".css", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf", ".map"]
+  if (!extAllowed.includes(ext)) return res.sendStatus(403)
+
   res.sendFile(filePath, err => { if (err) res.sendStatus(404) })
 })
 
