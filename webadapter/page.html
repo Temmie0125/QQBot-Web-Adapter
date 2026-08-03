@@ -4,23 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>自定义页面写法</title>
-  <style>
-    .pg-guide { max-width: 880px; margin: 0 auto; padding: 20px 8px 60px; color: #1f2329; line-height: 1.7; font-size: 14px; }
-    .pg-guide h1 { font-size: 24px; margin: 0 0 12px; }
-    .pg-guide h2 { font-size: 19px; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #e6e8ec; }
-    .pg-guide h3 { font-size: 16px; margin: 20px 0 8px; }
-    .pg-guide p { margin: 8px 0; }
-    .pg-guide code { background: #f0f2f5; border-radius: 4px; padding: 1px 5px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; color: #c5302b; }
-    .pg-guide pre { background: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 8px; padding: 12px 14px; overflow: auto; }
-    .pg-guide pre code { background: none; color: #24292f; padding: 0; font-size: 13px; }
-    .pg-guide table { border-collapse: collapse; width: 100%; margin: 10px 0; }
-    .pg-guide th, .pg-guide td { border: 1px solid #e1e4e8; padding: 7px 10px; text-align: left; }
-    .pg-guide th { background: #f6f8fa; font-weight: 600; }
-    .pg-guide blockquote { margin: 10px 0; padding: 6px 12px; border-left: 3px solid #4f6ef7; background: #f5f7ff; color: #455; }
-    .pg-guide ul, .pg-guide ol { margin: 8px 0; padding-left: 22px; }
-    .pg-guide li { margin: 4px 0; }
-    .pg-guide hr { border: none; border-top: 1px solid #e6e8ec; margin: 24px 0; }
-  </style>
+  <link rel="stylesheet" href="page.css" />
 </head>
 <body>
 <div class="pg-guide">
@@ -51,6 +35,49 @@
   </table>
   <p>同时提供 <code>html</code> 和 <code>src</code> 时，<code>src</code> 优先（iframe 模式）。<code>src</code> / <code>style</code> / <code>script</code> 写的是相对 <code>webadapter/</code> 目录的文件名，不要写绝对路径或 <code>../</code>。</p>
 
+  <h3><code>style</code> / <code>script</code> 使用说明</h3>
+  <p><code>style</code> 和 <code>script</code> 的行为取决于你用的是 <b><code>html</code> 模式</b>还是 <b><code>src</code>（iframe）模式</b>：</p>
+  <table>
+    <thead><tr><th>模式</th><th><code>style</code></th><th><code>script</code></th></tr></thead>
+    <tbody>
+      <tr><td><code>html</code>（内联 HTML 片段）</td><td>✅ 自动注入 <code>&lt;link rel="stylesheet"&gt;</code> 到 <code>&lt;head&gt;</code></td><td>✅ 自动注入 <code>&lt;script async&gt;</code> 到 <code>&lt;body&gt;</code> 末尾</td></tr>
+      <tr><td><code>src</code>（iframe 嵌入）</td><td>❌ 不注入，需在 iframe 的 HTML 里自己 <code>&lt;link&gt;</code>引用</td><td>❌ 同上，自己 <code>&lt;script&gt;</code> 引用</td></tr>
+    </tbody>
+  </table>
+
+  <h4><code>html</code> 模式示例</h4>
+  <p>适合带样式的轻量页面，CSS/JS 放在 <code>webadapter/</code> 下，由 WebAdapter 自动加载：</p>
+  <pre><code>{
+  "id": "styled-chart",
+  "title": "图表",
+  "icon": "📈",
+  "html": "&lt;h2&gt;数据图表&lt;/h2&gt;&lt;canvas id='chart' width='400' height='200'&gt;&lt;/canvas&gt;",
+  "style": "chart.css",
+  "script": "chart.js"
+}</code></pre>
+  <p><code>webadapter/chart.css</code> 和 <code>webadapter/chart.js</code> 会在页面切换到此页时自动注入。无需在 <code>html</code> 片段中写 <code>&lt;link&gt;</code> / <code>&lt;script&gt;</code>。</p>
+
+  <h4><code>src</code>（iframe）模式示例</h4>
+  <p>CSS/JS 在 iframe 的 HTML 中自己引用，WebAdapter 不会额外注入，<b>但是描述符里必须列出这些文件作为白名单</b>，否则加载时返回 403：</p>
+  <pre><code>{
+  "id": "dashboard",
+  "title": "仪表盘",
+  "icon": "📊",
+  "src": "dash.html",
+  "style": "dash.css",
+  "script": "dash.js"
+}</code></pre>
+  <p><code>webadapter/dash.html</code> 自己处理样式和脚本：</p>
+  <pre><code>&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;&lt;link rel="stylesheet" href="dash.css"&gt;&lt;/head&gt;
+&lt;body&gt;
+  &lt;h2&gt;仪表盘&lt;/h2&gt;
+  &lt;script src="dash.js"&gt;&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+  <blockquote><b>注意</b>：<code>style</code> / <code>script</code> 在 <code>src</code> 模式下<b>不会被注入到外层 DOM</b>（不需要），但它们仍然是<b>文件访问白名单</b>——<code>/api/web-page/</code> 路由只放行描述符中列出的文件。如果你的 HTML 里引用了 <code>dash.css</code> / <code>dash.js</code>，描述符不写 <code>style</code> / <code>script</code> 就会 403。如果 HTML 完全不引用外部 CSS/JS，则可以不写。</blockquote>
+
   <h2>二、约定式：纯静态页面快捷方式（page.json / pages.json）</h2>
   <p>适合<b>不需要后端接口</b>的纯展示页。在插件目录下直接放描述符文件，WebAdapter 开机自动扫描，无需写 <code>init</code>。</p>
   <blockquote>注意：约定式只能注册「页面」本身，不能注册数据接口。若页面需要后端数据，请用下方「三、操作模块注册」的方式写 <code>webadapter/index.js</code>。</blockquote>
@@ -69,7 +96,8 @@
   "title": "仪表盘",
   "icon": "📊",
   "src": "dash.html",
-  "style": "dash.css"
+  "style": "dash.css",
+  "script": "dash.js"
 }</code></pre>
   <p><code>webadapter/dash.html</code> 是完整 HTML 页面，通过 iframe 嵌入：</p>
   <pre><code>&lt;!DOCTYPE html&gt;

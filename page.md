@@ -41,6 +41,57 @@ QQBot-Web-Adapter 支持在不改动插件主入口的情况下，给 Web 控制
 - 同时提供 `html` 和 `src` 时，`src` 优先（`iframe` 模式）。
 - `src` / `style` / `script` 里写的是相对 `webadapter/` 目录的文件名（如 `"dash.html"`），不要写绝对路径或 `../`。
 
+### `style` / `script` 使用说明
+
+`style` 和 `script` 的行为取决于你用的是 **`html` 模式**还是 **`src`（iframe）模式**：
+
+| 模式 | `style` | `script` |
+| --- | --- | --- |
+| `html`（内联 HTML 片段） | ✅ 自动注入 `<link rel="stylesheet">` 到 `<head>` | ✅ 自动注入 `<script async>` 到 `<body>` 末尾 |
+| `src`（iframe 嵌入） | ❌ 不注入，需在 iframe 的 HTML 里自己 `<link>` / `<script>` 引用 | ❌ 同上 |
+
+**`html` 模式示例**：适合带样式的轻量页面，CSS/JS 放在 `webadapter/` 下，由 WebAdapter 自动加载：
+
+```json
+{
+  "id": "styled-chart",
+  "title": "图表",
+  "icon": "📈",
+  "html": "<h2>数据图表</h2><canvas id='chart' width='400' height='200'></canvas>",
+  "style": "chart.css",
+  "script": "chart.js"
+}
+```
+
+`webadapter/chart.css` 和 `webadapter/chart.js` 会在页面切换到此页时自动注入。无需在 `html` 片段中写 `<link>` / `<script>`。
+
+**`src`（iframe）模式示例**：CSS/JS 在 iframe 的 HTML 中自己引用，WebAdapter 不会额外注入，**但是描述符里必须列出这些文件作为白名单**，否则加载时返回 403：
+
+```json
+{
+  "id": "dashboard",
+  "title": "仪表盘",
+  "icon": "📊",
+  "src": "dash.html",
+  "style": "dash.css",
+  "script": "dash.js"
+}
+```
+
+```html
+<!-- webadapter/dash.html -->
+<!DOCTYPE html>
+<html>
+<head><link rel="stylesheet" href="dash.css"></head>
+<body>
+  <h2>仪表盘</h2>
+  <script src="dash.js"></script>
+</body>
+</html>
+```
+
+> **注意**：`style` / `script` 在 `src` 模式下**不会被注入到外层 DOM**（不需要），但它们仍然是**文件访问白名单**——`/api/web-page/` 路由只放行描述符中列出的文件。如果你的 HTML 里引用了 `dash.css` / `dash.js`，描述符不写 `style` / `script` 就会 403。如果 HTML 完全不引用外部 CSS/JS，则可以不写。
+
 ---
 
 ## 二、约定式：纯静态页面快捷方式（page.json / pages.json）
@@ -70,7 +121,8 @@ QQBot-Web-Adapter 支持在不改动插件主入口的情况下，给 Web 控制
   "title": "仪表盘",
   "icon": "📊",
   "src": "dash.html",
-  "style": "dash.css"
+  "style": "dash.css",
+  "script": "dash.js"
 }
 ```
 

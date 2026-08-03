@@ -1,0 +1,16 @@
+.pg-guide { max-width: 880px; margin: 0 auto; padding: 20px 8px 60px; color: #1f2329; line-height: 1.7; font-size: 14px; }
+.pg-guide h1 { font-size: 24px; margin: 0 0 12px; }
+.pg-guide h2 { font-size: 19px; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #e6e8ec; }
+.pg-guide h3 { font-size: 16px; margin: 20px 0 8px; }
+.pg-guide p { margin: 8px 0; }
+.pg-guide code { background: #f0f2f5; border-radius: 4px; padding: 1px 5px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; color: #c5302b; }
+.pg-guide pre { background: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 8px; padding: 12px 14px; overflow: auto; }
+.pg-guide pre code { background: none; color: #24292f; padding: 0; font-size: 13px; }
+.pg-guide table { border-collapse: collapse; width: 100%; margin: 10px 0; overflow-x: auto; }
+.pg-guide th, .pg-guide td { border: 1px solid #e1e4e8; padding: 7px 10px; text-align: left; overflow-wrap: break-word; word-break: break-word; }
+.pg-guide th { background: #f6f8fa; font-weight: 600; white-space: nowrap; }
+.pg-guide td code { word-break: break-all; }
+.pg-guide blockquote { margin: 10px 0; padding: 6px 12px; border-left: 3px solid #4f6ef7; background: #f5f7ff; color: #455; }
+.pg-guide ul, .pg-guide ol { margin: 8px 0; padding-left: 22px; }
+.pg-guide li { margin: 4px 0; }
+.pg-guide hr { border: none; border-top: 1px solid #e6e8ec; margin: 24px 0; }

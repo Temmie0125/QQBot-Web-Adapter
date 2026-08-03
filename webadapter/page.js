@@ -6,5 +6,6 @@ export default {
   title: "自定义页面写法",
   icon: "📝",
   priority: 100,
-  src: "page.html"
+  src: "page.html",
+  style: "page.css"
 }
