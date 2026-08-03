@@ -197,7 +197,7 @@ function mountWebPage(page) {
   webPagesMounted.add(page)
   if (def.type === "iframe") {
     const iframe = document.createElement("iframe")
-    iframe.src = def.src
+    iframe.src = `${def.src}?__webBase=${encodeURIComponent(WEB_BASE)}`
     iframe.className = "web-page-iframe"
     container.appendChild(iframe)
   } else {

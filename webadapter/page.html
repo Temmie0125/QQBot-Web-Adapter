@@ -78,6 +78,16 @@
 &lt;/html&gt;</code></pre>
   <blockquote><b>注意</b>：<code>style</code> / <code>script</code> 在 <code>src</code> 模式下<b>不会被注入到外层 DOM</b>（不需要），但它们仍然是<b>文件访问白名单</b>——<code>/api/web-page/</code> 路由只放行描述符中列出的文件。如果你的 HTML 里引用了 <code>dash.css</code> / <code>dash.js</code>，描述符不写 <code>style</code> / <code>script</code> 就会 403。如果 HTML 完全不引用外部 CSS/JS，则可以不写。</blockquote>
 
+  <h4>在 iframe 内部调用自定义 API</h4>
+  <p>iframe 加载时，WebAdapter 会在 URL 上自动附加 <code>?__webBase=</code> 查询参数，值为当前 Web 根路径（如 <code>/qqbot-web</code>）。在 iframe 的 JS 中一行拿到：</p>
+  <pre><code>// dash.js
+const WEB_BASE = new URLSearchParams(location.search).get("__webBase") // "/qqbot-web"
+
+// 调用任意 API 接口
+const res = await fetch(`${WEB_BASE}/api/qqbot-config`)
+const data = await res.json()</code></pre>
+  <p>不需要再根据 <code>location.pathname</code> 手动分割拼接了。</p>
+
   <h2>二、约定式：纯静态页面快捷方式（page.json / pages.json）</h2>
   <p>适合<b>不需要后端接口</b>的纯展示页。在插件目录下直接放描述符文件，WebAdapter 开机自动扫描，无需写 <code>init</code>。</p>
   <blockquote>注意：约定式只能注册「页面」本身，不能注册数据接口。若页面需要后端数据，请用下方「三、操作模块注册」的方式写 <code>webadapter/index.js</code>。</blockquote>

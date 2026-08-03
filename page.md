@@ -92,6 +92,21 @@ QQBot-Web-Adapter 支持在不改动插件主入口的情况下，给 Web 控制
 
 > **注意**：`style` / `script` 在 `src` 模式下**不会被注入到外层 DOM**（不需要），但它们仍然是**文件访问白名单**——`/api/web-page/` 路由只放行描述符中列出的文件。如果你的 HTML 里引用了 `dash.css` / `dash.js`，描述符不写 `style` / `script` 就会 403。如果 HTML 完全不引用外部 CSS/JS，则可以不写。
 
+### 在 iframe 内部调用自定义 API
+
+iframe 加载时，WebAdapter 会在 URL 上自动附加 `?__webBase=` 查询参数，值为当前 Web 根路径（如 `/qqbot-web`）。你可以在 iframe 的 JS 中直接读取：
+
+```js
+// dash.js
+const WEB_BASE = new URLSearchParams(location.search).get("__webBase") // "/qqbot-web"
+
+// 调用任意 API 接口
+const res = await fetch(`${WEB_BASE}/api/qqbot-config`)
+const data = await res.json()
+```
+
+不需要再根据 `location.pathname` 手动分割拼接了。
+
 ---
 
 ## 二、约定式：纯静态页面快捷方式（page.json / pages.json）
