@@ -3950,6 +3950,15 @@ Bot.express.post(`${WEB_BASE}/api/bot/:selfId/upload-image-raw`, express.raw({ t
 import * as emojiStore from "../QQBot-Plugin/lib/emojiStore.js"
 import { parseMultipart } from "../QQBot-Plugin/lib/multipart.js"
 
+// 从 parseMultipart 返回的文件中取图标 buffer 与扩展名
+function readEmojiIcon(file) {
+  if (!file) return { iconBuffer: undefined, iconExt: undefined }
+  const iconBuffer = file.buffer || Buffer.alloc(0)
+  const iconExt = (file.filename || "").split(".").pop().toLowerCase() || "png"
+  return { iconBuffer, iconExt }
+}
+
+
 // 表情包静态资源（图片直链）
 Bot.express.use(`${WEB_BASE}/emoji-static`, express.static(emojiStore.getEmojiRoot()))
 
@@ -3971,20 +3980,15 @@ Bot.express.post(`${WEB_BASE}/api/emoji/lists`, async (req, res) => {
     const ct = req.headers["content-type"] || ""
     if (ct.includes("multipart")) {
       const { fields, files } = await parseMultipart(req)
-      const title = fields.title
-      const folder = fields.folder
-      if (!title && !folder) return res.status(400).json({ error: "缺少 title/folder" })
-      const iconFile = files[0]
-      const list = await emojiStore.createList({
-        title,
-        folder,
-        iconBuffer: iconFile ? iconFile.buffer : undefined,
-        iconExt: iconFile ? (iconFile.filename.split(".").pop() || "png") : undefined,
-      })
+      const title = (fields.title || "").trim()
+      const folder = (fields.folder || "").trim()
+      if (!title) return res.status(400).json({ error: "缺少 title（标题必填）" })
+      const { iconBuffer, iconExt } = readEmojiIcon(files[0])
+      const list = await emojiStore.createList({ title, folder, iconBuffer, iconExt })
       res.json({ list })
     } else {
       const { title, icon, folder } = req.body || {}
-      if (!title && !folder) return res.status(400).json({ error: "缺少 title/folder" })
+      if (!title) return res.status(400).json({ error: "缺少 title（标题必填）" })
       const list = await emojiStore.createList({ title, icon, folder })
       res.json({ list })
     }
@@ -4011,11 +4015,11 @@ Bot.express.patch(`${WEB_BASE}/api/emoji/lists/:folder`, async (req, res) => {
     const ct = req.headers["content-type"] || ""
     if (ct.includes("multipart")) {
       const { fields, files } = await parseMultipart(req)
-      const iconFile = files[0]
+      const { iconBuffer, iconExt } = readEmojiIcon(files[0])
       const list = await emojiStore.updateList(req.params.folder, {
         title: fields.title,
-        iconBuffer: iconFile ? iconFile.buffer : undefined,
-        iconExt: iconFile ? (iconFile.filename.split(".").pop() || "png") : undefined,
+        iconBuffer,
+        iconExt,
       })
       res.json({ list })
     } else {
