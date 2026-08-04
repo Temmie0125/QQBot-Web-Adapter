@@ -190,6 +190,7 @@ if (Bot.quanliangMap?.size) {
 // QQBot-Plugin 数据目录（用于本地文件→Buffer，绕开 HTTP 鉴权）
 const QQBT_PLUGIN_DIR = path.join(__dirname, "..", "QQBot-Plugin")
 const QQBT_DATA_IMGS_DIR = path.join(QQBT_PLUGIN_DIR, "data", "imgs")
+const QQBT_DATA_EMOJI_DIR = path.join(QQBT_PLUGIN_DIR, "data", "emoji")
 
 /**
  * 将本地路径/本地 URL 读成 Buffer，避免 SDK HTTP 下载触发鉴权
@@ -205,8 +206,9 @@ async function resolveLocalFile(file) {
     if (m) relPath = decodeURIComponent(m[1])
   }
   const absPath = path.resolve(QQBT_PLUGIN_DIR, relPath)
-  // 安全：严格限制仅允许 data/imgs/ 目录
-  if (!absPath.startsWith(QQBT_DATA_IMGS_DIR + path.sep)) return null
+  // 安全：仅允许 data/imgs/ 与 data/emoji/ 目录（表情图片本地直发，不经图床）
+  const allowed = [QQBT_DATA_IMGS_DIR + path.sep, QQBT_DATA_EMOJI_DIR + path.sep]
+  if (!allowed.some(p => absPath.startsWith(p))) return null
   try {
     const buf = await fs.readFile(absPath)
     return { buf, name: path.basename(absPath) }
@@ -3940,6 +3942,169 @@ Bot.express.post(`${WEB_BASE}/api/bot/:selfId/upload-image-raw`, express.raw({ t
     }
   } catch (err) {
     logger.error("[QQBot-Web] 图片上传(raw)失败:", err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ========== 表情包管理 ==========
+import * as emojiStore from "../QQBot-Plugin/lib/emojiStore.js"
+import { parseMultipart } from "../QQBot-Plugin/lib/multipart.js"
+
+// 表情包静态资源（图片直链）
+Bot.express.use(`${WEB_BASE}/emoji-static`, express.static(emojiStore.getEmojiRoot()))
+
+// 列出所有表情列表
+Bot.express.get(`${WEB_BASE}/api/emoji/lists`, async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    const lists = await emojiStore.listLists()
+    res.json({ lists })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 创建表情列表（支持 multipart 上传图标图片，也支持 JSON）
+Bot.express.post(`${WEB_BASE}/api/emoji/lists`, async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    const ct = req.headers["content-type"] || ""
+    if (ct.includes("multipart")) {
+      const { fields, files } = await parseMultipart(req)
+      const title = fields.title
+      const folder = fields.folder
+      if (!title && !folder) return res.status(400).json({ error: "缺少 title/folder" })
+      const iconFile = files[0]
+      const list = await emojiStore.createList({
+        title,
+        folder,
+        iconBuffer: iconFile ? iconFile.buffer : undefined,
+        iconExt: iconFile ? (iconFile.filename.split(".").pop() || "png") : undefined,
+      })
+      res.json({ list })
+    } else {
+      const { title, icon, folder } = req.body || {}
+      if (!title && !folder) return res.status(400).json({ error: "缺少 title/folder" })
+      const list = await emojiStore.createList({ title, icon, folder })
+      res.json({ list })
+    }
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 删除表情列表
+Bot.express.delete(`${WEB_BASE}/api/emoji/lists/:folder`, async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    await emojiStore.deleteList(req.params.folder)
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 修改表情列表设置（标题 / 图标图片）
+Bot.express.patch(`${WEB_BASE}/api/emoji/lists/:folder`, async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    const ct = req.headers["content-type"] || ""
+    if (ct.includes("multipart")) {
+      const { fields, files } = await parseMultipart(req)
+      const iconFile = files[0]
+      const list = await emojiStore.updateList(req.params.folder, {
+        title: fields.title,
+        iconBuffer: iconFile ? iconFile.buffer : undefined,
+        iconExt: iconFile ? (iconFile.filename.split(".").pop() || "png") : undefined,
+      })
+      res.json({ list })
+    } else {
+      const { title, icon } = req.body || {}
+      const list = await emojiStore.updateList(req.params.folder, { title, icon })
+      res.json({ list })
+    }
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 调整列表顺序
+Bot.express.post(`${WEB_BASE}/api/emoji/lists/reorder`, express.json(), async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    const { order } = req.body || {}
+    if (!Array.isArray(order)) return res.status(400).json({ error: "order 必须为数组" })
+    await emojiStore.reorderLists(order)
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 获取某列表下的表情
+Bot.express.get(`${WEB_BASE}/api/emoji/lists/:folder/emojis`, async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    const emojis = await emojiStore.listEmojis(req.params.folder, WEB_BASE)
+    res.json({ emojis })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 向列表添加表情图片（支持多文件：单图 / 图集压缩包 / 文件夹）
+// 注意：不使用 express.raw，由 parseMultipart 直接从流解析 multipart 请求体
+Bot.express.post(`${WEB_BASE}/api/emoji/lists/:folder/emojis`, async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    const { files } = await parseMultipart(req)
+    if (!files.length) return res.status(400).json({ error: "缺少文件" })
+    // 处理压缩包（zip）：解压后把图片加入；文件夹上传同理（多文件）
+    let all = files
+    const zips = files.filter(f => /\.zip$/i.test(f.filename))
+    if (zips.length) {
+      const { extractZipImages } = await import("../QQBot-Plugin/lib/zipEmoji.js")
+      const extracted = await extractZipImages(zips)
+      all = files.filter(f => !/\.zip$/i.test(f.filename)).concat(extracted)
+    }
+    const result = await emojiStore.addEmojis(req.params.folder, all)
+    res.json({ added: result.added, skipped: result.skipped || 0 })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 同步文件夹：清理失效记录并载入文件夹内未记录的图片
+Bot.express.post(`${WEB_BASE}/api/emoji/lists/:folder/sync`, async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    const result = await emojiStore.syncFolder(req.params.folder)
+    res.json(result)
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 删除单个表情
+Bot.express.delete(`${WEB_BASE}/api/emoji/lists/:folder/emojis/:file`, async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    await emojiStore.deleteEmoji(req.params.folder, req.params.file)
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 调整表情顺序
+Bot.express.post(`${WEB_BASE}/api/emoji/lists/:folder/emojis/reorder`, express.json(), async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    const { order } = req.body || {}
+    if (!Array.isArray(order)) return res.status(400).json({ error: "order 必须为数组" })
+    await emojiStore.reorderEmojis(req.params.folder, order)
+    res.json({ ok: true })
+  } catch (err) {
     res.status(500).json({ error: String(err) })
   }
 })

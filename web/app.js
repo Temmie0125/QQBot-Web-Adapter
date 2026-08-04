@@ -4310,6 +4310,14 @@ function getEditorSegments() {
             // data URL 解析失败，跳过
           }
         }
+      } else if (node.classList && node.classList.contains("chat-image-inline")) {
+        // 表情包插入的图片：直接当本地图片发送（不经过图床）
+        const url = node.getAttribute("data-url") || node.src
+        if (url) {
+          const m = url.match(/\/emoji-static\/([^/]+)\/(.+)$/)
+          const rel = m ? `data/emoji/${decodeURIComponent(m[1])}/${decodeURIComponent(m[2])}` : url
+          segments.push({ type: "image", file: rel, fileName: node.getAttribute("data-name") || "emoji.png" })
+        }
       } else if (node.tagName === "BR") {
         segments.push({ type: "text", text: "\n" })
       } else {
@@ -4779,6 +4787,14 @@ async function uploadFileForSend(file, fileName) {
   return data.url
 }
 
+/** 将本地表情图片（/web/emoji-static/...）按"上传文件"方式上传到图床（Bot.imageToUrl），返回真实外链 */
+async function uploadLocalImageForSend(localUrl, fileName) {
+  const resp = await fetch(localUrl, { credentials: "include" })
+  if (!resp.ok) throw new Error("读取本地图片失败")
+  const blob = await resp.blob()
+  return await uploadFileForSend(blob, fileName || "emoji.png")
+}
+
 // ===== 消息发送 =====
 async function sendMessage() {
   if (state._sending) return
@@ -4801,7 +4817,7 @@ async function sendMessage() {
     const hasContent = rawSegments.some(s => s.type === "text" ? s.text.trim() : s.type === "image" ? true : false)
     if (!hasContent) { state._sending = false; return }
 
-    // 收集 Blob 图片，在 segments 中用 {img:N} 占位
+    // 收集 Blob 图片（粘贴图片），表情图片以本地相对路径直接发送，不经图床
     const blobs = []
     const segments = rawSegments.map(s => {
       if (s.type === "image" && s._file instanceof Blob) {
@@ -5992,6 +6008,7 @@ function setupEventListeners() {
       const arkForm = $("#arkForm")
       const clearBtn = $("#chatInputClear")
       const inlineClearBtn = $("#chatInputInlineClear")
+      const emojiTriggerNormal = $("#emojiTriggerNormal")
 
       if (btn.dataset.type === "media") {
         textInput.style.display = "none"
@@ -6003,6 +6020,7 @@ function setupEventListeners() {
         if (arkForm) arkForm.style.display = "none"
         if (clearBtn) clearBtn.classList.remove("show")
         if (inlineClearBtn) inlineClearBtn.style.display = "none"
+        if (emojiTriggerNormal) emojiTriggerNormal.style.display = "none"
       } else if (btn.dataset.type === "ark") {
         textInput.style.display = "none"
         if (textWrapper) textWrapper.style.display = "none"
@@ -6013,6 +6031,7 @@ function setupEventListeners() {
         if (arkForm) arkForm.style.display = ""
         if (clearBtn) clearBtn.classList.add("show")
         if (inlineClearBtn) inlineClearBtn.style.display = "none"
+        if (emojiTriggerNormal) emojiTriggerNormal.style.display = "none"
         updateArkFields()
       } else {
         textInput.style.display = ""
@@ -6024,6 +6043,7 @@ function setupEventListeners() {
         if (arkForm) arkForm.style.display = "none"
         if (clearBtn) clearBtn.classList.remove("show")
         if (inlineClearBtn) inlineClearBtn.style.display = ""
+        if (emojiTriggerNormal) emojiTriggerNormal.style.display = ""
       }
     })
   })
@@ -6137,6 +6157,15 @@ function setupEventListeners() {
     btn.addEventListener("click", () => {
       const targetId = btn.dataset.target
       if (targetId) uploadImageForArk(targetId)
+    })
+  })
+
+  // 表情包按钮（普通/MD 触发、Ark 24/37 上传旁）
+  const emojiTriggerNormal = $("#emojiTriggerNormal")
+  if (emojiTriggerNormal) emojiTriggerNormal.addEventListener("click", () => openEmojiPicker({ mode: "editor" }))
+  $$(".ark-emoji-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      openEmojiPicker({ mode: "ark", target: btn.dataset.target })
     })
   })
 
@@ -7430,6 +7459,7 @@ let wasMobile = isMobile()
 async function init() {
   console.log("========== QQBot-Web v2 (debug) 初始化 ==========")
   setupEventListeners()
+  bindEmojiPickerEvents()
   connectWebSocket()
   console.log("[init] 事件绑定完成，开始 loadBots")
   await loadBots()
@@ -7458,6 +7488,645 @@ async function init() {
       }
     }
   })
+}
+
+// ========== 表情包选择 ==========
+const emojiState = {
+  open: false,
+  mode: "editor",      // editor | ark
+  arkTarget: null,     // ark 输入框 id
+  lists: [],           // [{ folder, icon, title, order, count }]
+  activeFolder: null,
+  dragList: null,      // 正在拖动的列表 folder
+  dragEmoji: null,     // 正在拖动的表情 file
+  selectMode: false,   // 表情多选模式
+  selected: new Set(), // 多选模式下选中的 file 集合
+  currentEmojis: [],   // 当前网格表情数据（用于重渲染）
+  editFolder: null,    // 正在编辑设置的列表 folder
+  editIconFile: null,  // 编辑时新选的图标文件
+}
+
+const ICON_PALETTE = ["😀","😂","🥰","😎","🤩","🐱","🐶","🌟","🔥","🍔","⚽","🎮","❤️","👍","🌈","💡","🎉","🚀","☕","🌸","🐼","🦊","🍎","🎵"]
+
+function emojiStaticUrl(folder, file) {
+  return `${WEB_BASE}/emoji-static/${folder}/${encodeURIComponent(file)}`
+}
+
+async function openEmojiPicker(opts) {
+  emojiState.open = true
+  emojiState.mode = opts.mode || "editor"
+  emojiState.arkTarget = opts.target || null
+  $("#emojiPickerModal").style.display = "flex"
+  await loadEmojiLists()
+}
+
+function closeEmojiPicker() {
+  emojiState.open = false
+  emojiState.selectMode = false
+  emojiState.selected.clear()
+  closeEmojiContextMenu()
+  $("#emojiPickerModal").style.display = "none"
+}
+
+async function loadEmojiLists() {
+  try {
+    const data = await api("/emoji/lists")
+    emojiState.lists = Array.isArray(data.lists) ? data.lists : []
+    if (!emojiState.activeFolder && emojiState.lists.length) {
+      emojiState.activeFolder = emojiState.lists[0].folder
+    }
+    if (emojiState.activeFolder && !emojiState.lists.find(l => l.folder === emojiState.activeFolder)) {
+      emojiState.activeFolder = emojiState.lists.length ? emojiState.lists[0].folder : null
+    }
+    renderEmojiListBar()
+    if (emojiState.activeFolder) {
+      await loadEmojiGrid(emojiState.activeFolder)
+    } else {
+      renderEmojiGrid([])
+    }
+  } catch (e) {
+    console.error("[emoji] 列表加载失败:", e)
+    showToast("表情列表加载失败")
+  }
+}
+
+function renderEmojiListBar() {
+  const wrap = $("#emojiListItems")
+  wrap.innerHTML = ""
+  emojiState.lists.forEach((l) => {
+    const item = document.createElement("div")
+    item.className = "emoji-list-item" + (l.folder === emojiState.activeFolder ? " active" : "")
+    item.dataset.folder = l.folder
+    item.setAttribute("draggable", "true")
+    const iconHtml = l.icon
+      ? (l.icon.includes(".") ? `<img src="${emojiStaticUrl("icon", l.icon)}" alt="">` : l.icon)
+      : `<span class="emoji-default-icon">📁</span>`
+    item.innerHTML = `<div class="emoji-list-icon">${iconHtml}</div><div class="emoji-list-title">${escapeHtml(l.title)}</div>`
+    item.addEventListener("click", () => {
+      emojiState.activeFolder = l.folder
+      renderEmojiListBar()
+      loadEmojiGrid(l.folder)
+    })
+    // 原生拖拽
+    item.addEventListener("dragstart", (ev) => onListDragStart(ev, l.folder, item))
+    item.addEventListener("dragover", (ev) => onListDragOver(ev, l.folder, item, "item"))
+    item.addEventListener("dragleave", () => item.classList.remove("drag-target"))
+    item.addEventListener("drop", (ev) => onListDrop(ev, l.folder, item))
+    // 右键菜单：修改设置 / 删除
+    item.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault()
+      showEmojiListMenu(ev, l)
+    })
+    wrap.appendChild(item)
+  })
+}
+
+// 列表插入占位（拖到此处 = 插到某列表前面/后面）
+async function loadEmojiGrid(folder) {
+  try {
+    // 打开列表时自动同步：载入文件夹内未记录的图片并清除失效记录
+    await api(`/emoji/lists/${encodeURIComponent(folder)}/sync`, { method: "POST" }).catch(() => {})
+    const data = await api(`/emoji/lists/${encodeURIComponent(folder)}/emojis`)
+    renderEmojiGrid(Array.isArray(data.emojis) ? data.emojis : [])
+  } catch (e) {
+    renderEmojiGrid([])
+  }
+}
+
+function renderEmojiGrid(emojis) {
+  emojiState.currentEmojis = emojis
+  const grid = $("#emojiGrid")
+  grid.innerHTML = ""
+  // 第一个位置固定为「+ 添加表情图片」虚线单元（勾选模式下不显示）
+  if (!emojiState.selectMode) {
+    const addCell = document.createElement("div")
+    addCell.className = "emoji-cell emoji-add-cell"
+    addCell.title = "添加表情图片"
+    addCell.textContent = "+"
+    addCell.addEventListener("click", pickEmojiImages)
+    grid.appendChild(addCell)
+  }
+  if (!emojis.length) {
+    const tip = document.createElement("div")
+    tip.className = "emoji-grid-empty"
+    tip.textContent = emojiState.selectMode ? "列表为空" : "列表为空，点击左侧「+」添加表情图片"
+    grid.appendChild(tip)
+    return
+  }
+  for (const e of emojis) {
+    const file = e.file || (e.url ? e.url.split("/").pop() : "")
+    const src = e.url || emojiStaticUrl(emojiState.activeFolder, file)
+    const cell = document.createElement("div")
+    cell.className = "emoji-cell"
+    cell.dataset.file = file
+    cell.title = e.name || file
+    cell.setAttribute("draggable", emojiState.selectMode ? "false" : "true")
+    const img = document.createElement("img")
+    img.src = src
+    img.alt = e.name || file
+    cell.appendChild(img)
+    if (emojiState.selectMode) {
+      // 勾选模式：右上角圆孔
+      cell.classList.add("selectable")
+      const chk = document.createElement("div")
+      chk.className = "emoji-check" + (emojiState.selected.has(file) ? " checked" : "")
+      chk.innerHTML = emojiState.selected.has(file) ? "✓" : ""
+      cell.appendChild(chk)
+      cell.classList.toggle("selected", emojiState.selected.has(file))
+      // 点击 cell 或圆孔 -> 切换选中
+      cell.addEventListener("click", () => toggleEmojiSelected(file))
+      cell.addEventListener("contextmenu", (ev) => ev.preventDefault())
+    } else {
+      cell.addEventListener("click", () => insertEmojiToTarget(src))
+      cell.addEventListener("dragstart", (ev) => onEmojiDragStart(ev, file, cell))
+      cell.addEventListener("dragover", (ev) => onEmojiDragOver(ev, file, cell, "item"))
+      cell.addEventListener("dragleave", () => cell.classList.remove("drag-target"))
+      cell.addEventListener("drop", (ev) => onEmojiDrop(ev, file, cell))
+      cell.addEventListener("contextmenu", (ev) => { ev.preventDefault(); showEmojiMenu(ev, file) })
+    }
+    grid.appendChild(cell)
+  }
+  // 勾选模式底部操作条
+  toggleEmojiBatchBar()
+}
+
+// 切换表情勾选状态
+function toggleEmojiSelected(file) {
+  if (emojiState.selected.has(file)) emojiState.selected.delete(file)
+  else emojiState.selected.add(file)
+  // 仅更新对应 cell 圆孔，避免整页重渲染丢失滚动
+  const cell = [...document.querySelectorAll(".emoji-cell")].find(c => c.dataset.file === file)
+  if (cell) {
+    const chk = cell.querySelector(".emoji-check")
+    const on = emojiState.selected.has(file)
+    cell.classList.toggle("selected", on)
+    if (chk) { chk.classList.toggle("checked", on); chk.innerHTML = on ? "✓" : "" }
+  }
+  toggleEmojiBatchBar()
+}
+
+// 进入勾选模式（右键「选中」触发）
+function enterEmojiSelectMode(file) {
+  emojiState.selectMode = true
+  emojiState.selected = new Set([file])
+  renderEmojiGrid(emojiState.currentEmojis)
+}
+
+// 退出勾选模式
+function exitEmojiSelectMode() {
+  emojiState.selectMode = false
+  emojiState.selected.clear()
+  renderEmojiGrid(emojiState.currentEmojis)
+  toggleEmojiBatchBar()
+}
+
+// 显示/隐藏底部批量操作条
+function toggleEmojiBatchBar() {
+  const bar = $("#emojiBatchBar")
+  if (!bar) return
+  if (emojiState.selectMode) {
+    bar.style.display = "flex"
+    const count = emojiState.selected.size
+    $("#emojiBatchCount").textContent = count > 0 ? `已选 ${count} 张` : "未选择"
+    $("#emojiBatchDelete").disabled = count === 0
+  } else {
+    bar.style.display = "none"
+  }
+}
+
+// 批量删除勾选的表情
+async function deleteSelectedEmojis() {
+  const files = [...emojiState.selected]
+  if (!files.length) return
+  if (!confirm(`确定删除选中的 ${files.length} 张表情？`)) return
+  try {
+    for (const f of files) {
+      await api(`/emoji/lists/${encodeURIComponent(emojiState.activeFolder)}/emojis/${encodeURIComponent(f)}`, { method: "DELETE" })
+    }
+    exitEmojiSelectMode()
+    await loadEmojiGrid(emojiState.activeFolder)
+    showToast(`已删除 ${files.length} 张表情`)
+  } catch (e) {
+    showToast("删除失败: " + e.message)
+  }
+}
+
+// 将表情图片 URL 填入对应位置
+async function insertEmojiToTarget(url) {
+  if (emojiState.mode === "ark" && emojiState.arkTarget) {
+    showToast("表情图片上传中...")
+    try {
+      const up = await uploadLocalImageForSend(url, "emoji.png")
+      const input = document.getElementById(emojiState.arkTarget)
+      if (input) input.value = up
+    } catch (e) {
+      showToast("表情图片上传失败: " + e.message)
+    }
+    closeEmojiPicker()
+    return
+  }
+  // 编辑器模式：插入到光标处（普通/MD 共用 contenteditable）
+  const editor = $("#chatInput")
+  if (!editor) { closeEmojiPicker(); return }
+  editor.focus()
+  if (savedEditorRange) restoreEditorRange(savedEditorRange)
+  const seg = document.createElement("img")
+  seg.src = url
+  seg.className = "chat-image-inline"
+  seg.setAttribute("data-url", url)
+  seg.setAttribute("data-type", "image")
+  seg.contentEditable = "false"
+  insertNodeAtCursor(seg)
+  closeEmojiPicker()
+}
+
+// 插入图片节点到光标处（与普通图片粘贴逻辑一致）
+function insertNodeAtCursor(node) {
+  const sel = window.getSelection()
+  if (!sel || !sel.rangeCount) {
+    $("#chatInput").appendChild(node)
+    return
+  }
+  let range = savedEditorRange || sel.getRangeAt(0)
+  range.deleteContents()
+  const r = range.cloneRange()
+  r.insertNode(node)
+  r.setStartAfter(node)
+  r.collapse(true)
+  sel.removeAllRanges()
+  sel.addRange(r)
+  savedEditorRange = r.cloneRange()
+}
+
+function restoreEditorRange(range) {
+  const sel = window.getSelection()
+  sel.removeAllRanges()
+  sel.addRange(range)
+}
+
+// ===== 新建表情列表 =====
+function openEmojiListCreate() {
+  emojiState.createIconFile = null
+  $("#emojiListCreatePreview").innerHTML = '<span class="emoji-default-icon">📁</span>'
+  $("#emojiListCreateTitle").value = ""
+  $("#emojiListCreateFolder").value = ""
+  $("#emojiListCreateModal").style.display = "flex"
+}
+
+async function createEmojiList() {
+  const title = $("#emojiListCreateTitle").value.trim()
+  const folder = $("#emojiListCreateFolder").value.trim()
+  if (!title && !folder) { showToast("请填写标题或文件夹名称"); return }
+  try {
+    const fd = new FormData()
+    fd.append("title", title)
+    fd.append("folder", folder)
+    if (emojiState.createIconFile) fd.append("iconFile", emojiState.createIconFile, emojiState.createIconFile.name)
+    const data = await api("/emoji/lists", { method: "POST", body: fd })
+    $("#emojiListCreateModal").style.display = "none"
+    await loadEmojiLists()
+    if (data.list) {
+      emojiState.activeFolder = data.list.folder
+      renderEmojiListBar()
+      await loadEmojiGrid(data.list.folder)
+    }
+  } catch (e) {
+    showToast("创建失败: " + e.message)
+  }
+}
+
+async function deleteEmojiList(folder) {
+  if (!confirm(`确定删除表情列表「${emojiState.lists.find(l => l.folder === folder)?.title || folder}」及其所有表情？`)) return
+  try {
+    await api(`/emoji/lists/${encodeURIComponent(folder)}`, { method: "DELETE" })
+    if (emojiState.activeFolder === folder) emojiState.activeFolder = null
+    await loadEmojiLists()
+  } catch (e) {
+    showToast("删除失败: " + e.message)
+  }
+}
+
+// ===== 添加表情图片（含 zip 压缩包 / 文件夹多文件）=====
+function pickEmojiImages() {
+  $("#emojiImageInput").value = ""
+  $("#emojiImageInput").click()
+}
+
+async function addEmojiImages(fileList) {
+  if (!emojiState.activeFolder) { showToast("请先选择或新建一个表情列表"); return }
+  const fd = new FormData()
+  for (const f of fileList) fd.append("files", f, f.name)
+  try {
+    const data = await api(`/emoji/lists/${encodeURIComponent(emojiState.activeFolder)}/emojis`, { method: "POST", body: fd })
+    await loadEmojiGrid(emojiState.activeFolder)
+    const added = (data.added || []).length
+    const skipped = data.skipped || 0
+    if (skipped > 0) showToast(`已添加 ${added} 张，跳过 ${skipped} 张重复图片`)
+    else showToast(`已添加 ${added} 张表情`)
+  } catch (e) {
+    showToast("添加失败: " + e.message)
+  }
+}
+
+async function deleteEmoji(folder, file) {
+  if (!confirm("确定删除该表情？")) return
+  try {
+    await api(`/emoji/lists/${encodeURIComponent(folder)}/emojis/${encodeURIComponent(file)}`, { method: "DELETE" })
+    await loadEmojiGrid(folder)
+  } catch (e) {
+    showToast("删除失败: " + e.message)
+  }
+}
+
+// ===== 拖动排序（原生 HTML5 Drag & Drop，对标 imagebed：插入占位 + 拖到目标交换）=====
+// 交换两个 DOM 节点位置（用占位注释节点，保证前后相邻都能正确交换）
+function swapDomNodes(a, b) {
+  if (!a || !b || a === b || a.parentNode !== b.parentNode) return
+  const parent = a.parentNode
+  const marker = document.createComment("swap")
+  parent.insertBefore(marker, a)
+  parent.insertBefore(a, b)
+  parent.insertBefore(b, marker)
+  parent.removeChild(marker)
+}
+
+// 列表拖拽
+function onListDragStart(ev, folder, item) {
+  emojiState.dragList = folder
+  item.classList.add("dragging")
+  ev.dataTransfer.effectAllowed = "move"
+  try { ev.dataTransfer.setData("text/plain", folder) } catch (e) {}
+}
+
+// 根据光标在目标元素内的水平位置判断意图：
+// 左 1/3 = 插到前面；右 1/3 = 插到后面；中间 1/3 = 交换位置
+function dragIntent(ev, el) {
+  const r = el.getBoundingClientRect()
+  const x = ev.clientX - r.left
+  if (x < r.width / 3) return "before"
+  if (x > (r.width * 2) / 3) return "after"
+  return "swap"
+}
+
+function onListDragOver(ev, folder, el) {
+  ev.preventDefault()
+  ev.dataTransfer.dropEffect = "move"
+  if (folder === emojiState.dragList) return
+  const intent = dragIntent(ev, el)
+  el.classList.toggle("drag-target", intent === "swap")
+  el.classList.toggle("drag-insert-before", intent === "before")
+  el.classList.toggle("drag-insert-after", intent === "after")
+}
+
+async function onListDrop(ev, folder, el) {
+  ev.preventDefault()
+  const draggingFolder = emojiState.dragList
+  const bar = $("#emojiListItems")
+  const dragging = [...bar.querySelectorAll(".emoji-list-item")].find(e => e.dataset.folder === draggingFolder)
+  if (!dragging || draggingFolder === folder) { cleanupListDnd(); return }
+  const intent = dragIntent(ev, el)
+  if (intent === "swap") {
+    swapDomNodes(dragging, el)
+  } else if (intent === "before") {
+    bar.insertBefore(dragging, el)
+  } else {
+    // after：插到目标后面（即目标的下一个兄弟节点之前）
+    const next = el.nextElementSibling
+    if (next) bar.insertBefore(dragging, next)
+    else bar.appendChild(dragging)
+  }
+  cleanupListDnd()
+  const order = [...bar.querySelectorAll(".emoji-list-item")].map(e => e.dataset.folder)
+  try {
+    await api("/emoji/lists/reorder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order }) })
+    emojiState.dragList = null
+    await loadEmojiLists()
+  } catch (e) { showToast("排序保存失败") }
+}
+
+function cleanupListDnd() {
+  document.querySelectorAll(".emoji-list-item.dragging,.emoji-list-item.drag-target,.emoji-list-item.drag-insert-before,.emoji-list-item.drag-insert-after")
+    .forEach(e => e.classList.remove("dragging", "drag-target", "drag-insert-before", "drag-insert-after"))
+  emojiState.dragList = null
+}
+
+// 表情拖拽
+function onEmojiDragStart(ev, file, cell) {
+  emojiState.dragEmoji = file
+  cell.classList.add("dragging")
+  ev.dataTransfer.effectAllowed = "move"
+  try { ev.dataTransfer.setData("text/plain", file) } catch (e) {}
+}
+
+function onEmojiDragOver(ev, file, el) {
+  ev.preventDefault()
+  ev.dataTransfer.dropEffect = "move"
+  if (file === emojiState.dragEmoji) return
+  const intent = dragIntent(ev, el)
+  el.classList.toggle("drag-target", intent === "swap")
+  el.classList.toggle("drag-insert-before", intent === "before")
+  el.classList.toggle("drag-insert-after", intent === "after")
+}
+
+async function onEmojiDrop(ev, file, el) {
+  ev.preventDefault()
+  const draggingFile = emojiState.dragEmoji
+  const grid = $("#emojiGrid")
+  const dragging = [...grid.querySelectorAll(".emoji-cell")].find(c => c.dataset.file === draggingFile)
+  if (!dragging || draggingFile === file) { cleanupEmojiDnd(); return }
+  const intent = dragIntent(ev, el)
+  if (intent === "swap") {
+    swapDomNodes(dragging, el)
+  } else if (intent === "before") {
+    grid.insertBefore(dragging, el)
+  } else {
+    const next = el.nextElementSibling
+    if (next) grid.insertBefore(dragging, next)
+    else grid.appendChild(dragging)
+  }
+  cleanupEmojiDnd()
+  const order = [...grid.querySelectorAll(".emoji-cell")].map(c => c.dataset.file)
+  try {
+    await api(`/emoji/lists/${encodeURIComponent(emojiState.activeFolder)}/emojis/reorder`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order }),
+    })
+    emojiState.dragEmoji = null
+    await loadEmojiGrid(emojiState.activeFolder)
+  } catch (e) { showToast("排序保存失败") }
+}
+
+function cleanupEmojiDnd() {
+  document.querySelectorAll(".emoji-cell.dragging,.emoji-cell.drag-target,.emoji-cell.drag-insert-before,.emoji-cell.drag-insert-after")
+    .forEach(e => e.classList.remove("dragging", "drag-target", "drag-insert-before", "drag-insert-after"))
+  emojiState.dragEmoji = null
+}
+
+// ===== 右键菜单（表情包专用，动态生成）=====
+function showEmojiContextMenu(ev, items) {
+  closeEmojiContextMenu()
+  const menu = document.createElement("div")
+  menu.className = "context-menu emoji-context-menu"
+  menu.id = "emojiContextMenu"
+  menu.style.zIndex = "99999"
+  const appendItem = (it) => {
+    if (it.divider) {
+      const d = document.createElement("div")
+      d.className = "context-menu-divider"
+      menu.appendChild(d)
+      return
+    }
+    const el = document.createElement("div")
+    el.className = "context-menu-item" + (it.danger ? " danger" : "")
+    el.textContent = it.label
+    el.addEventListener("click", () => { closeEmojiContextMenu(); it.onClick() })
+    menu.appendChild(el)
+  }
+  for (const it of items) appendItem(it)
+  // 挂载到表情包弹窗内部，避免被弹窗遮罩（z-index:600）盖住
+  const host = document.getElementById("emojiPickerModal") || document.body
+  host.appendChild(menu)
+  // 定位（避免超出视口）
+  const mw = menu.offsetWidth, mh = menu.offsetHeight
+  let x = ev.clientX, y = ev.clientY
+  if (x + mw > window.innerWidth) x = window.innerWidth - mw - 8
+  if (y + mh > window.innerHeight) y = window.innerHeight - mh - 8
+  menu.style.left = x + "px"
+  menu.style.top = y + "px"
+  // 点击别处（非菜单内）关闭；用 pointerdown 捕获，且过滤菜单自身点击，避免右键事件冒泡误关
+  setTimeout(() => {
+    document.addEventListener("pointerdown", onEmojiMenuOutside, true)
+  }, 0)
+}
+
+function onEmojiMenuOutside(e) {
+  const m = document.getElementById("emojiContextMenu")
+  if (m && !m.contains(e.target)) {
+    closeEmojiContextMenu()
+    document.removeEventListener("pointerdown", onEmojiMenuOutside, true)
+  }
+}
+
+function closeEmojiContextMenu() {
+  document.removeEventListener("pointerdown", onEmojiMenuOutside, true)
+  const m = document.getElementById("emojiContextMenu")
+  if (m) m.remove()
+}
+
+// 列表右键菜单：修改设置 / 删除
+function showEmojiListMenu(ev, list) {
+  showEmojiContextMenu(ev, [
+    { label: "修改设置", onClick: () => openEmojiListEdit(list) },
+    { divider: true },
+    { label: "删除列表", danger: true, onClick: () => deleteEmojiList(list.folder) },
+  ])
+}
+
+// 表情右键菜单：选中 / 删除
+function showEmojiMenu(ev, file) {
+  showEmojiContextMenu(ev, [
+    { label: "选中", onClick: () => enterEmojiSelectMode(file) },
+    { divider: true },
+    { label: "删除", danger: true, onClick: () => deleteEmoji(emojiState.activeFolder, file) },
+  ])
+}
+
+// ===== 修改表情列表设置弹窗 =====
+function openEmojiListEdit(list) {
+  emojiState.editFolder = list.folder
+  emojiState.editIconFile = null
+  $("#emojiListEditTitle").value = list.title || ""
+  const preview = $("#emojiListEditPreview")
+  if (list.icon) {
+    preview.innerHTML = list.icon.includes(".")
+      ? `<img src="${emojiStaticUrl("icon", list.icon)}" alt="">`
+      : (list.icon || `<span class="emoji-default-icon">📁</span>`)
+  } else {
+    preview.innerHTML = `<span class="emoji-default-icon">📁</span>`
+  }
+  $("#emojiListEditModal").style.display = "flex"
+}
+
+async function saveEmojiListEdit() {
+  const folder = emojiState.editFolder
+  if (!folder) return
+  const title = $("#emojiListEditTitle").value.trim()
+  try {
+    const fd = new FormData()
+    if (title) fd.append("title", title)
+    if (emojiState.editIconFile) fd.append("iconFile", emojiState.editIconFile, emojiState.editIconFile.name)
+    await api(`/emoji/lists/${encodeURIComponent(folder)}`, { method: "PATCH", body: fd })
+    $("#emojiListEditModal").style.display = "none"
+    await loadEmojiLists()
+    if (emojiState.activeFolder === folder) await loadEmojiGrid(folder)
+    showToast("已保存列表设置")
+  } catch (e) {
+    showToast("保存失败: " + e.message)
+  }
+}
+
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]))
+}
+
+// 表情包弹窗事件绑定
+function bindEmojiPickerEvents() {
+  $("#emojiPickerClose").addEventListener("click", closeEmojiPicker)
+  $("#emojiListAdd").addEventListener("click", openEmojiListCreate)
+  $("#emojiImageInput").addEventListener("change", (e) => {
+    if (e.target.files && e.target.files.length) addEmojiImages([...e.target.files])
+  })
+  $("#emojiPickerModal").addEventListener("click", (e) => {
+    if (e.target === $("#emojiPickerModal")) closeEmojiPicker()
+  })
+  // 新建列表弹窗
+  $("#emojiListCreateClose").addEventListener("click", () => $("#emojiListCreateModal").style.display = "none")
+  $("#emojiListCreateConfirm").addEventListener("click", createEmojiList)
+  $("#emojiListCreatePickIcon").addEventListener("click", () => $("#emojiListCreateIconFile").click())
+  $("#emojiListCreateIconFile").addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0]
+    if (!file) return
+    emojiState.createIconFile = file
+    const url = URL.createObjectURL(file)
+    $("#emojiListCreatePreview").innerHTML = `<img src="${url}" alt="icon">`
+  })
+  $("#emojiListCreateModal").addEventListener("click", (e) => {
+    if (e.target === $("#emojiListCreateModal")) $("#emojiListCreateModal").style.display = "none"
+  })
+  // 修改列表设置弹窗
+  $("#emojiListEditClose").addEventListener("click", () => $("#emojiListEditModal").style.display = "none")
+  $("#emojiListEditConfirm").addEventListener("click", saveEmojiListEdit)
+  $("#emojiListEditPickIcon").addEventListener("click", () => $("#emojiListEditIconFile").click())
+  $("#emojiListEditIconFile").addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0]
+    if (!file) return
+    emojiState.editIconFile = file
+    const url = URL.createObjectURL(file)
+    $("#emojiListEditPreview").innerHTML = `<img src="${url}" alt="icon">`
+  })
+  $("#emojiListEditModal").addEventListener("click", (e) => {
+    if (e.target === $("#emojiListEditModal")) $("#emojiListEditModal").style.display = "none"
+  })
+  // 批量操作条
+  $("#emojiBatchCancel").addEventListener("click", exitEmojiSelectMode)
+  $("#emojiBatchDelete").addEventListener("click", deleteSelectedEmojis)
+  // 操作提示面板：锚定在标题栏下方（CSS absolute，约束在弹窗内）
+  const helpBtn = $("#emojiHelpBtn")
+  const helpPanel = $("#emojiHelpPanel")
+  function showHelp() {
+    helpPanel.style.display = "block"
+  }
+  function hideHelp() {
+    const p = $("#emojiHelpPanel")
+    if (p && !p.matches(":hover") && document.activeElement !== helpBtn) p.style.display = "none"
+  }
+  helpBtn.addEventListener("click", (e) => {
+    e.stopPropagation()
+    if (helpPanel.style.display === "block") helpPanel.style.display = "none"
+    else showHelp()
+  })
+  helpBtn.addEventListener("mouseenter", showHelp)
+  helpBtn.addEventListener("mouseleave", () => setTimeout(hideHelp, 150))
+  helpPanel.addEventListener("mouseleave", () => setTimeout(hideHelp, 150))
 }
 
 document.addEventListener("DOMContentLoaded", init)

@@ -393,6 +393,9 @@
                         <button class="ark-upload-btn" data-target="ark24_img" title="上传图片">
                           <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 12V2M5 6l4-4 4 4M3 12v3a1 1 0 001 1h10a1 1 0 001-1v-3"/></svg>
                         </button>
+                        <button class="ark-emoji-btn" data-target="ark24_img" title="插入表情包">
+                          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="9" cy="9" r="7"/><circle cx="6.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="11.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><path d="M6.5 11c.8 1 4.2 1 5 0"/></svg>
+                        </button>
                       </div>
                     </div>
                     <div class="ark-form-row"><label>链接 #LINK#</label><input id="ark24_link" placeholder="https://跳转链接"></div>
@@ -408,6 +411,9 @@
                         <input id="ark37_cover" placeholder="https://图片链接 (975x540)">
                         <button class="ark-upload-btn" data-target="ark37_cover" title="上传图片">
                           <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 12V2M5 6l4-4 4 4M3 12v3a1 1 0 001 1h10a1 1 0 001-1v-3"/></svg>
+                        </button>
+                        <button class="ark-emoji-btn" data-target="ark37_cover" title="插入表情包">
+                          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="9" cy="9" r="7"/><circle cx="6.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="11.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><path d="M6.5 11c.8 1 4.2 1 5 0"/></svg>
                         </button>
                       </div>
                     </div>
@@ -428,6 +434,9 @@
                     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="14" height="14" rx="2"/><circle cx="6.5" cy="6.5" r="1.5"/><path d="M2 12l4-4 3 3 2-2 5 5"/></svg>
                   </button>
                   <button class="chat-clear-btn" id="chatInputClear" title="一键清空">一键清空</button>
+                  <button class="emoji-trigger-btn" id="emojiTriggerNormal" title="插入表情包">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="9" cy="9" r="7"/><circle cx="6.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="11.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><path d="M6.5 11c.8 1 4.2 1 5 0"/></svg>
+                  </button>
                   <button class="chat-send-btn" id="chatSendBtn">
                     <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><path d="M2 2l14 7L2 16v-5.5L9 9 2 7.5V2z"/></svg>
                   </button>
@@ -833,7 +842,82 @@
     </div>
   </div>
 
-  <!-- 用户信息弹窗 -->
+  <!-- 表情包选择弹窗 -->
+  <div class="modal-overlay emoji-picker-overlay" id="emojiPickerModal" style="display:none">
+    <div class="modal-content emoji-picker-content">
+      <div class="modal-header emoji-picker-header">
+        <span>表情包</span>
+        <button class="emoji-help-btn" id="emojiHelpBtn" title="表情包操作提示">?</button>
+        <button class="modal-close emoji-picker-close" id="emojiPickerClose">✕</button>
+        <div class="emoji-help-panel" id="emojiHelpPanel" style="display:none">
+          <div class="emoji-help-title">表情包操作提示</div>
+          <ul class="emoji-help-list">
+            <li><b>新建列表</b>：点击标题栏右侧「+」可新建表情包列表，可设置标题与图标图片。</li>
+            <li><b>添加表情</b>：进入列表后，点击网格左上角虚线「+」单元，可添加单个表情图片，或选择 <b>.zip</b> 压缩包批量导入（支持 png/jpg/gif/webp/bmp/svg）。</li>
+            <li><b>移动位置</b>：长按列表或表情并拖动。落在目标<b>中间</b>即插入到其前后；拖到目标<b>正上方（中心）</b>则与之交换位置（替换位置）。</li>
+            <li><b>修改列表</b>：右键列表 → 「修改设置」，可修改标题与图标图片。</li>
+            <li><b>选中 / 批量删除</b>：右键表情 → 「选中」进入勾选模式，其余表情显示未勾选圆孔，点击可切换；底部「删除」一键删除勾选，「取消」退出。</li>
+            <li><b>删除</b>：右键列表可删除整个列表；右键表情「删除」可删除单张。</li>
+            <li><b>发送</b>：普通/MD 消息中点击表情直接作为图片插入；Ark 模板中会先上传到图床再填入链接。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="emoji-picker-body">
+        <div class="emoji-list-bar" id="emojiListBar">
+          <div class="emoji-list-items" id="emojiListItems"></div>
+          <button class="emoji-list-add" id="emojiListAdd" title="新建表情列表">+</button>
+        </div>
+        <div class="emoji-grid-wrap">
+          <div class="emoji-grid" id="emojiGrid"></div>
+          <input type="file" id="emojiImageInput" style="display:none" multiple accept="image/*,.zip">
+        </div>
+        <div class="emoji-batch-bar" id="emojiBatchBar" style="display:none">
+          <span class="emoji-batch-count" id="emojiBatchCount">未选择</span>
+          <div class="emoji-batch-actions">
+            <button class="emoji-batch-cancel" id="emojiBatchCancel">取消</button>
+            <button class="emoji-batch-delete" id="emojiBatchDelete" disabled>删除</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新建表情列表弹窗 -->
+  <div class="modal-overlay" id="emojiListCreateModal" style="display:none">
+    <div class="modal-content emoji-list-create-content">
+      <div class="modal-header"><span>新建表情列表</span><button class="modal-close" id="emojiListCreateClose">✕</button></div>
+      <div class="emoji-list-create-body">
+        <div class="emoji-list-create-iconrow">
+          <div class="emoji-list-create-preview" id="emojiListCreatePreview"><span class="emoji-default-icon">📁</span></div>
+          <button class="emoji-list-create-pickicon" id="emojiListCreatePickIcon">选择图标图片</button>
+          <input type="file" id="emojiListCreateIconFile" accept="image/*" style="display:none">
+        </div>
+        <div class="ark-form-row"><label>列表标题</label><input id="emojiListCreateTitle" placeholder="例如：常用表情"></div>
+        <div class="ark-form-row"><label>文件夹名称</label><input id="emojiListCreateFolder" placeholder="例如：common（留空自动生成）"></div>
+        <div class="emoji-list-create-actions">
+          <button class="note-modal-btn note-modal-save" id="emojiListCreateConfirm">创建</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 修改表情列表设置弹窗 -->
+  <div class="modal-overlay" id="emojiListEditModal" style="display:none">
+    <div class="modal-content emoji-list-create-content">
+      <div class="modal-header"><span>修改表情列表</span><button class="modal-close" id="emojiListEditClose">✕</button></div>
+      <div class="emoji-list-create-body">
+        <div class="emoji-list-create-iconrow">
+          <div class="emoji-list-create-preview" id="emojiListEditPreview"><span class="emoji-default-icon">📁</span></div>
+          <button class="emoji-list-create-pickicon" id="emojiListEditPickIcon">选择图标图片</button>
+          <input type="file" id="emojiListEditIconFile" accept="image/*" style="display:none">
+        </div>
+        <div class="ark-form-row"><label>列表标题</label><input id="emojiListEditTitle" placeholder="例如：常用表情"></div>
+        <div class="emoji-list-create-actions">
+          <button class="note-modal-btn note-modal-save" id="emojiListEditConfirm">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="modal-overlay" id="userInfoModal" style="display:none">
     <div class="modal-content user-info-content">
       <div class="modal-header">
