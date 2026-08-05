@@ -640,6 +640,7 @@ body {
 
 /* ===== Chat Area ===== */
 .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-chat); min-width: 0; position: relative; }
+.chat-area::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 8px; background: var(--bg-secondary); z-index: 1; }
 .chat-empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   flex: 1; color: var(--text-muted); gap: 12px;
@@ -843,6 +844,7 @@ body {
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
   padding: 0 16px;
+  margin-bottom: 8px;
   flex-shrink: 0;
   max-height: 50vh;
   overflow-y: auto;
@@ -1920,8 +1922,27 @@ body {
 @media (max-width: 768px) {
   /* PC 侧边栏在移动端隐藏 */
   .sidebar { display: none !important; }
-  /* 顶部标题：移动端保证显示 */
-  .topbar { padding: 0 12px; gap: 8px; }
+  /* 顶部标题：移动端保证显示，并向下延伸避开刘海/摄像头安全区 */
+  .topbar {
+    position: relative;
+    padding: 0 12px;
+    gap: 8px;
+    /* 内容只下沉一点，整体更贴顶 */
+    padding-top: 20px;
+    min-height: calc(56px + 20px);
+    align-items: center;
+  }
+  /* 背景向下延伸覆盖摄像头/刘海安全区，避免内容被遮挡且不显得太空 */
+  .topbar::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    top: calc(-1 * env(safe-area-inset-top, 0px));
+    bottom: 0;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    z-index: -1;
+  }
   .bot-info, .bot-dropdown-arrow { display: none; }
   .topbar-title {
     flex: 1;
@@ -2036,6 +2057,12 @@ body {
   }
   .chat-header-back:hover { background: var(--bg-hover); }
 
+  /* 移动端聊天页头部：与外面顶部栏一致，内容只下沉一点、紧凑避让 */
+  .chat-header {
+    padding-top: 32px;
+    min-height: calc(56px + 32px);
+  }
+
   /* 仪表盘响应式 */
   .dashboard { padding: 16px; }
   .dashboard h2 { font-size: 18px; margin-bottom: 16px; }
@@ -2100,7 +2127,6 @@ body {
 
   /* Ark 表单移动端适配 */
   .chat-input-area { max-height: 45vh; padding: 0 10px; }
-  .message-type-selector { margin-top: -8px; padding-top: 8px; box-shadow: 0 -8px 0 0 var(--bg-secondary); }
   .ark-form { padding: 8px 10px; }
   .ark-form-row { flex-direction: column; align-items: stretch; gap: 4px; margin-bottom: 10px; }
   .ark-form-row label { min-width: auto; white-space: normal; }
