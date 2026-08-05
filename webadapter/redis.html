@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redis 查看</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Segoe UI Variable', 'Segoe UI', -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #f0f2f5; color: #1a1a2e; padding: 20px 24px; min-height: 100vh;
+  font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ====== 搜索栏 ====== */
+.search-bar {
+  display: flex; gap: 10px; align-items: center;
+  background: #fff; border: 1px solid #e0e3e8; border-radius: 8px;
+  padding: 8px 12px; margin-bottom: 8px;
+}
+.search-bar input {
+  flex: 1; border: none; outline: none; font-size: 14px; font-family: inherit;
+  background: transparent; color: #1a1a2e;
+}
+.search-bar input::placeholder { color: #9aa0a6; }
+.search-bar .btn {
+  border: none; font-size: 13px; padding: 7px 16px; border-radius: 6px;
+  cursor: pointer; transition: background .15s; white-space: nowrap; font-family: inherit;
+}
+.btn-primary { background: #4f6ef7; color: #fff; }
+.btn-primary:hover { background: #3b56db; }
+.btn-danger { background: #ea4335; color: #fff; }
+.btn-danger:hover { background: #c5221f; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.hints { font-size: 12px; color: #9aa0a6; margin-bottom: 12px; }
+.hints code {
+  background: #e8edff; color: #4f6ef7; padding: 1px 6px;
+  border-radius: 4px; font-family: "SF Mono", "Consolas", monospace; cursor: pointer;
+}
+.hints code:hover { background: #d3e3fd; }
+.hints .btn-refresh {
+  margin-left: 8px; font-size: 12px; padding: 3px 10px; border: 1px solid #e0e3e8;
+  border-radius: 4px; background: #fff; color: #5f6368; cursor: pointer;
+}
+.hints .btn-refresh:hover { background: #e8eaed; color: #1a1a2e; }
+
+/* ====== 统计栏 ====== */
+.stats {
+  display: flex; gap: 16px; align-items: center; margin-bottom: 12px;
+  padding: 10px 16px; background: #fff; border: 1px solid #e0e3e8;
+  border-radius: 8px; font-size: 13px; color: #5f6368;
+}
+.stats .count { color: #34a853; font-weight: 600; }
+.stats .sep { color: #e0e3e8; }
+
+/* ====== 表格 ====== */
+#table-wrapper {
+  background: #fff; border: 1px solid #e0e3e8; border-radius: 8px; overflow: hidden;
+}
+table {
+  width: 100%; border-collapse: collapse;
+}
+th {
+  text-align: left; font-size: 12px; font-weight: 600; color: #5f6368;
+  padding: 10px 14px; background: #f7f8fa; border-bottom: 1px solid #e0e3e8;
+}
+td {
+  padding: 9px 14px; font-size: 13px; border-bottom: 1px solid #f0f0f0;
+  vertical-align: middle;
+}
+tr:last-child > td { border-bottom: none; }
+tr.key-row { cursor: pointer; transition: background .1s; }
+tr.key-row:hover { background: #f0f2f5; }
+tr.key-row.selected { background: #e8edff; }
+.key-name {
+  font-family: "SF Mono", "Consolas", monospace; font-size: 12px; word-break: break-all;
+}
+
+/* 类型标签 */
+.badge {
+  display: inline-block; font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 4px;
+}
+.b-string { background: #e8edff; color: #4f6ef7; }
+.b-hash   { background: #e8f5e9; color: #34a853; }
+.b-list   { background: #fef3e0; color: #e68a2e; }
+.b-set    { background: #f3e8ff; color: #7c3aed; }
+.b-zset   { background: #fce4ec; color: #d6336c; }
+.b-none   { background: #fce8e6; color: #ea4335; }
+
+.ttl { font-size: 12px; color: #5f6368; }
+.ttl-expired { color: #ea4335; }
+
+/* ====== 行内展开详情 ====== */
+tr.detail-row > td {
+  padding: 0 14px 12px 14px; border-bottom: 1px solid #e0e3e8;
+}
+.detail-wrap {
+  background: #f7f8fa; border: 1px solid #e0e3e8; border-radius: 8px;
+  overflow: hidden;
+}
+.detail-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid #e0e3e8; background: #fff;
+}
+.detail-head .dh-key {
+  flex: 1; font-family: "SF Mono", "Consolas", monospace; font-size: 13px; word-break: break-all;
+  font-weight: 600; color: #1a1a2e;
+}
+.detail-head .dh-meta { font-size: 12px; color: #5f6368; display: flex; gap: 10px; }
+
+.btn-sm {
+  border: none; font-size: 12px; padding: 5px 12px; border-radius: 6px;
+  cursor: pointer; transition: all .15s; font-family: inherit;
+}
+.btn-outline { background: transparent; border: 1px solid #e0e3e8; color: #5f6368; }
+.btn-outline:hover { background: #e8eaed; color: #1a1a2e; }
+.btn-danger-outline { background: transparent; border: 1px solid #fce8e6; color: #ea4335; font-size: 12px; padding: 3px 10px; border-radius: 4px; cursor: pointer; font-family: inherit; }
+.btn-danger-outline:hover { background: #fce8e6; }
+
+.detail-body { padding: 14px; max-height: 400px; overflow: auto; }
+.detail-body::-webkit-scrollbar { width: 6px; }
+.detail-body::-webkit-scrollbar-thumb { background: #e0e3e8; border-radius: 3px; }
+
+.value-box {
+  background: #fff; border: 1px solid #e0e3e8; border-radius: 6px;
+  padding: 12px 14px; font-family: "SF Mono", "Consolas", monospace;
+  font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+  color: #1a1a2e; max-height: 380px; overflow: auto;
+}
+
+.hash-table { width: 100%; border-collapse: collapse; border: 1px solid #e0e3e8; border-radius: 6px; overflow: hidden; }
+.hash-table td {
+  padding: 5px 10px; font-size: 12px; border-bottom: 1px solid #f0f0f0;
+  font-family: "SF Mono", "Consolas", monospace;
+}
+.hash-table td:first-child { color: #4f6ef7; font-weight: 500; background: #fafbfc; }
+.hash-table td:last-child { word-break: break-all; }
+.hash-table tr:last-child td { border-bottom: none; }
+
+.empty { text-align: center; padding: 56px 24px; color: #9aa0a6; }
+.empty .icon { font-size: 40px; margin-bottom: 8px; }
+.empty .msg { font-size: 14px; }
+
+.loading-text { text-align: center; padding: 24px; color: #9aa0a6; font-size: 13px; }
+
+/* ====== Toast ====== */
+.toast {
+  position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+  background: #1a1a2e; color: #fff; padding: 10px 22px; border-radius: 8px;
+  font-size: 13px; z-index: 999; opacity: 0; pointer-events: none;
+  transition: opacity .25s; box-shadow: 0 4px 20px rgba(0,0,0,.15);
+}
+.toast.show { opacity: 1; }
+.toast.err { background: #ea4335; }
+</style>
+</head>
+<body>
+
+<div class="search-bar">
+  <input type="text" id="pattern" placeholder="输入 pattern，例如：yunzai:*" value="*">
+  <button class="btn btn-primary" id="btn-scan" onclick="scan()">扫描</button>
+  <button class="btn btn-danger" id="btn-del-all" onclick="deleteByPattern()" style="display:none">一键删除</button>
+</div>
+<div class="hints">
+  常用：<code onclick="quickScan('yunzai:*')">yunzai:*</code>
+  <code onclick="quickScan('imagebed:*')">imagebed:*</code>
+  <code onclick="quickScan('*:stats:*')">*:stats:*</code>
+  <code onclick="quickScan('*')">全部</code>
+  <button class="btn-refresh" onclick="doRefresh()">刷新当前展开项</button>
+</div>
+
+<div class="stats" id="stats-bar" style="display:none">
+  <span>已加载 <span class="count" id="key-count">0</span> 个键</span>
+  <span class="sep">|</span>
+  <span id="page-hint" style="font-size:12px"></span>
+</div>
+
+<div id="table-wrapper">
+  <div class="empty"><div class="msg">点击扫描查看 Redis 键</div></div>
+</div>
+
+<div id="sentinel" style="height:1px;"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "/" + (location.pathname.split("/")[1] || "qqbot-web") + "/api/web-redis"
+const container = document.getElementById("table-wrapper")
+
+let state = {
+  keys: [],
+  cursor: 0,
+  hasMore: false,
+  pattern: "*",
+  expandedKey: null,
+  detailCache: {},
+  loadingMore: false,
+}
+
+/* ====== 滚动自动加载 ====== */
+const sentinel = document.getElementById("sentinel")
+const observer = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting && state.hasMore && !state.loadingMore) {
+    scanMore()
+  }
+}, { rootMargin: "100px" })
+
+function observeSentinel() {
+  observer.disconnect()
+  if (state.hasMore) observer.observe(sentinel)
+}
+
+/* ====== Toast ====== */
+function toast(msg, err) {
+  const el = document.getElementById("toast")
+  el.textContent = msg
+  el.className = "toast show" + (err ? " err" : "")
+  clearTimeout(el._t)
+  el._t = setTimeout(() => el.className = "toast", 2500)
+}
+
+/* ====== TTL 格式化 ====== */
+function fmtTtl(ttl) {
+  if (ttl === -1) return "永不过期"
+  if (ttl === -2) return "已过期"
+  if (ttl < 60) return ttl + "s"
+  if (ttl < 3600) return Math.floor(ttl / 60) + "m"
+  if (ttl < 86400) return Math.floor(ttl / 3600) + "h"
+  return Math.floor(ttl / 86400) + "d"
+}
+
+function ttlCls(ttl) { return ttl === -2 ? "ttl-expired" : "" }
+
+/* ====== HTML 转义 ====== */
+function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") }
+
+/* ====== 扫描 ====== */
+async function scan() {
+  const pattern = document.getElementById("pattern").value.trim() || "*"
+  const btn = document.getElementById("btn-scan")
+  btn.disabled = true; btn.textContent = "扫描中..."
+  state.expandedKey = null; state.detailCache = {}; state.keys = []
+
+  try {
+    const p = new URLSearchParams({ pattern, cursor: "0", count: 50 })
+    const r = await fetch(API + "?" + p)
+    const d = await r.json()
+    if (!d.ok) { toast(d.error, true); return }
+
+    state.keys = d.keys; state.cursor = d.cursor; state.hasMore = d.hasMore; state.pattern = pattern
+
+    document.getElementById("key-count").textContent = d.keys.length
+    document.getElementById("page-hint").textContent = d.hasMore ? "（还有更多）" : "（已全部加载）"
+    document.getElementById("stats-bar").style.display = "flex"
+    document.getElementById("btn-del-all").style.display = "inline-block"
+    render()
+    observeSentinel()
+  } catch (e) {
+    toast("请求失败: " + e.message, true)
+  } finally {
+    btn.disabled = false; btn.textContent = "扫描"
+  }
+}
+
+async function scanMore() {
+  if (state.loadingMore) return
+  state.loadingMore = true
+
+  try {
+    const p = new URLSearchParams({ pattern: state.pattern, cursor: String(state.cursor), count: 50 })
+    const r = await fetch(API + "?" + p)
+    const d = await r.json()
+    if (!d.ok) { toast(d.error, true); return }
+
+    state.keys.push(...d.keys); state.cursor = d.cursor; state.hasMore = d.hasMore
+
+    document.getElementById("key-count").textContent = state.keys.length
+    document.getElementById("page-hint").textContent = d.hasMore ? "（还有更多）" : "（已全部加载）"
+    render()
+    observeSentinel()
+  } catch (e) {
+    toast("加载失败: " + e.message, true)
+  } finally {
+    state.loadingMore = false
+  }
+}
+
+function quickScan(pattern) {
+  document.getElementById("pattern").value = pattern
+  scan()
+}
+
+/* ====== 渲染 ====== */
+function render() {
+  if (state.keys.length === 0) {
+    container.innerHTML = '<div class="empty"><div class="msg">没有匹配的键</div></div>'
+    return
+  }
+
+  let html = "<table><thead><tr><th>键</th><th>类型</th><th>TTL</th><th style=\"width:60px;text-align:center\">操作</th></tr></thead><tbody>"
+
+  for (let i = 0; i < state.keys.length; i++) {
+    const k = state.keys[i]
+    const sel = state.expandedKey === k.key ? " selected" : ""
+    html += '<tr class="key-row' + sel + '" onclick="onRowClick(event)" data-key="' + esc(k.key) + '">'
+    html += '<td><span class="key-name">' + esc(k.key) + '</span></td>'
+    html += '<td><span class="badge b-' + k.type + '">' + esc(k.type) + '</span></td>'
+    html += '<td><span class="ttl ' + ttlCls(k.ttl) + '">' + esc(fmtTtl(k.ttl)) + '</span></td>'
+    html += '<td style="text-align:center"><button class="btn-sm btn-danger-outline" onclick="event.stopPropagation();deleteKey(\'' + esc(k.key) + '\')">删除</button></td>'
+    html += '</tr>'
+
+    // 展开的详情行
+    if (state.expandedKey === k.key) {
+      const cached = state.detailCache[k.key]
+      html += '<tr class="detail-row"><td colspan="4">'
+      if (cached === "loading") {
+        html += '<div class="detail-wrap"><div class="loading-text">加载中...</div></div>'
+      } else if (cached && cached.ok) {
+        html += buildDetail(k.key, cached)
+      } else if (cached && !cached.ok) {
+        html += '<div class="detail-wrap"><div class="loading-text">' + esc(cached.error || "加载失败") + '</div></div>'
+      }
+      html += '</td></tr>'
+    }
+  }
+
+  html += "</tbody></table>"
+  if (state.hasMore && state.loadingMore) {
+    html += '<div class="loading-text">加载中...</div>'
+  }
+  container.innerHTML = html
+}
+
+function buildDetail(key, d) {
+  let body = ""
+
+  if (d.type === "hash" && d.value && Object.keys(d.value).length > 0) {
+    body = '<table class="hash-table">'
+    for (const [f, v] of Object.entries(d.value)) {
+      body += '<tr><td>' + esc(f) + '</td><td>' + esc(String(v)) + '</td></tr>'
+    }
+    body += '</table>'
+  } else if (d.type === "zset" && Array.isArray(d.value)) {
+    body = '<table class="hash-table">'
+    for (let i = 0; i < d.value.length; i += 2) {
+      body += '<tr><td>' + esc(String(d.value[i])) + '</td><td style="color:#34a853">' + esc(String(d.value[i + 1])) + '</td></tr>'
+    }
+    body += '</table>'
+  } else if (d.value != null) {
+    let display
+    try { display = JSON.stringify(d.value, null, 2) } catch { display = String(d.value) }
+    body = '<div class="value-box">' + esc(display) + '</div>'
+  } else {
+    body = '<div style="padding:8px;color:#9aa0a6;">（空值或已过期）</div>'
+  }
+
+  return '<div class="detail-wrap">' +
+    '<div class="detail-head">' +
+      '<span class="dh-key">' + esc(key) + '</span>' +
+      '<span class="dh-meta">' +
+        '<span class="badge b-' + d.type + '">' + esc(d.type) + '</span>' +
+        '<span class="ttl ' + ttlCls(d.ttl) + '">TTL: ' + fmtTtl(d.ttl) + '</span>' +
+      '</span>' +
+      '<button class="btn-sm btn-outline" onclick="event.stopPropagation();copyVal(this)" data-key="' + esc(key) + '">复制</button>' +
+    '</div>' +
+    '<div class="detail-body">' + body + '</div>' +
+  '</div>'
+}
+
+/* ====== 行点击 ====== */
+async function onRowClick(event) {
+  const key = event.currentTarget.getAttribute("data-key")
+  if (!key) return
+
+  // 如果已展开，收起
+  if (state.expandedKey === key) {
+    state.expandedKey = null
+    render()
+    return
+  }
+
+  // 展开新键
+  const prevKey = state.expandedKey
+  state.expandedKey = key
+
+  if (state.detailCache[key]) {
+    // 已有缓存（包括 loading），直接渲染
+    render()
+    // 如果之前显示的是 loading 且仍在加载中，不需要额外处理
+    return
+  }
+
+  // 第一次请求：标记 loading 并渲染，然后异步获取
+  state.detailCache[key] = "loading"
+  render()
+
+  try {
+    const r = await fetch(API + "?key=" + encodeURIComponent(key))
+    const d = await r.json()
+
+    // 确保当前展开的仍是这个 key（防止快速切换导致覆盖）
+    if (state.expandedKey !== key) return
+
+    state.detailCache[key] = d
+    render()
+  } catch (e) {
+    if (state.expandedKey !== key) return
+    state.detailCache[key] = { ok: false, error: e.message }
+    render()
+  }
+}
+
+function doRefresh() {
+  const key = state.expandedKey
+  if (!key) { toast("没有展开的键", true); return }
+  delete state.detailCache[key]
+  state.expandedKey = key // 保持展开，触发重新加载
+
+  state.detailCache[key] = "loading"
+  render()
+
+  fetch(API + "?key=" + encodeURIComponent(key))
+    .then(r => r.json())
+    .then(d => {
+      if (state.expandedKey === key) {
+        state.detailCache[key] = d
+        render()
+      }
+    })
+    .catch(e => {
+      if (state.expandedKey === key) {
+        state.detailCache[key] = { ok: false, error: e.message }
+        render()
+      }
+    })
+}
+
+function copyVal(el) {
+  const key = el.getAttribute("data-key")
+  const d = state.detailCache[key]
+  if (!d || !d.ok || d.value == null) { toast("没有内容可复制", true); return }
+  let text
+  if (typeof d.value === "string") {
+    text = d.value
+  } else {
+    try { text = JSON.stringify(d.value, null, 2) } catch { text = String(d.value) }
+  }
+  navigator.clipboard.writeText(text).then(
+    () => toast("已复制到剪贴板"),
+    () => toast("复制失败", true)
+  )
+}
+
+/* ====== 删除操作 ====== */
+async function deleteKey(key) {
+  if (!confirm("确定要删除键 " + key + " 吗？\n此操作不可撤销。")) return
+
+  try {
+    const r = await fetch(API + "?key=" + encodeURIComponent(key), { method: "DELETE" })
+    const d = await r.json()
+    if (!d.ok) { toast(d.error, true); return }
+
+    toast("已删除: " + key + "（" + d.deleted + "个键）")
+
+    // 从列表中移除
+    state.keys = state.keys.filter(k => k.key !== key)
+    delete state.detailCache[key]
+    if (state.expandedKey === key) state.expandedKey = null
+    document.getElementById("key-count").textContent = state.keys.length
+    render()
+  } catch (e) {
+    toast("删除失败: " + e.message, true)
+  }
+}
+
+async function deleteByPattern() {
+  const pattern = document.getElementById("pattern").value.trim() || state.pattern
+  const btn = document.getElementById("btn-del-all")
+
+  // 二次确认
+  if (!confirm("确定要删除所有匹配 " + pattern + " 的键吗？\n\n此操作不可撤销！")) return
+  if (!confirm("再次确认：删除所有匹配 " + pattern + " 的键？")) return
+
+  btn.disabled = true; btn.textContent = "删除中..."
+
+  try {
+    const r = await fetch(API + "?pattern=" + encodeURIComponent(pattern), { method: "DELETE" })
+    const d = await r.json()
+    if (!d.ok) { toast(d.error, true); return }
+
+    toast("已删除 " + d.deleted + " 个键（pattern: " + pattern + "）")
+
+    // 重新扫描
+    state.expandedKey = null; state.detailCache = {}
+    scan()
+  } catch (e) {
+    toast("删除失败: " + e.message, true)
+  } finally {
+    btn.disabled = false; btn.textContent = "一键删除"
+  }
+}
+
+/* ====== 快捷键 ====== */
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Enter" && document.activeElement === document.getElementById("pattern")) {
+    e.preventDefault(); scan()
+  }
+  if (e.key === "Escape") { state.expandedKey = null; render() }
+})
+
+/* ====== 启动 ====== */
+scan()
+</script>
+</body>
+</html>
