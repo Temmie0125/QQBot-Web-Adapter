@@ -948,11 +948,11 @@ function renderGroupList() {
         const qq = state.groupBindings[g.group_id]
         const boundInfo = qq ? state.boundGroupInfos[qq] : null
         let avatarChar = (pureId || "#")[0]
-        let avatarHtml = `<div class="group-avatar">${escHtml(avatarChar)}</div>`
+        let avatarHtml = `<div class="group-avatar group-avatar-clickable" data-group-id="${g.group_id}" title="查看群信息">${escHtml(avatarChar)}</div>`
         // 有绑定的群优先使用真实头像
         if (qq) {
           const avatarUrl = `http://p.qlogo.cn/gh/${qq}/${qq}/640`
-          avatarHtml = `<img class="group-avatar-img" src="${escHtml(avatarUrl)}" alt="" onerror="this.outerHTML='<div class=\\'group-avatar\\'>${escHtml(avatarChar)}</div>'">`
+          avatarHtml = `<img class="group-avatar-img group-avatar-clickable" data-group-id="${g.group_id}" src="${escHtml(avatarUrl)}" alt="" title="查看群信息" onerror="this.outerHTML='<div class=\\'group-avatar group-avatar-clickable\\' data-group-id=\\'${g.group_id}\\'>${escHtml(avatarChar)}</div>'">`
         }
         let nameHtml
         if (note) {
@@ -987,6 +987,27 @@ function renderGroupList() {
     // 移动端长按 → 群右键菜单
     addLongPress(el, (e) => showGroupContextMenu(e, el.dataset.groupId))
   })
+
+  // 群头像点击 → 查看群信息（阻止冒泡，避免触发 selectGroup）
+  listEl.querySelectorAll(".group-avatar-clickable[data-group-id]").forEach(el => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation()
+      showGroupInfoModal(el.dataset.groupId)
+    })
+  })
+
+  // 若仍有群名是兜底 id（后端正在异步补取群名），稍后自动刷新一次群列表
+  const hasPending = state.groups.some(g => {
+    const pureId = getPureGroupId(g.group_id)
+    return g.group_name === g.group_id || g.group_name === pureId
+  })
+  if (hasPending && !state._pendingGroupRefresh) {
+    state._pendingGroupRefresh = true
+    setTimeout(() => {
+      state._pendingGroupRefresh = false
+      if (state.currentView === "messages") loadGroups()
+    }, 2000)
+  }
 }
 
 async function selectGroup(groupId) {
@@ -3037,6 +3058,9 @@ function handleGroupContextAction(action) {
     case "refresh-group-info":
       refreshSingleGroupInfo(groupContextGroupId)
       break
+    case "group-info":
+      showGroupInfoModal(groupContextGroupId)
+      break
     case "blacklist-group":
       blacklistGroupFromWeb(groupContextGroupId)
       break
@@ -3942,6 +3966,80 @@ function showUserInfoModal(msg, source = "chat") {
 function closeUserInfoModal() {
   $("#userInfoModal").style.display = "none"
   state.userInfoSource = null
+}
+
+// ===== 群信息弹窗 =====
+async function showGroupInfoModal(groupId) {
+  const modal = $("#groupInfoModal")
+  if (!modal) return
+  const pureId = getPureGroupId(groupId)
+  // 先填充兜底 openid，避免空白
+  $("#groupInfoOpenId").textContent = pureId
+  $("#groupInfoName").textContent = "加载中…"
+  $("#groupInfoTags").innerHTML = ""
+  $("#groupInfoMemberNum").textContent = "-"
+  $("#groupInfoNote").textContent = "-"
+  $("#groupInfoFingerMemo").textContent = "-"
+  $("#groupInfoClassText").textContent = "-"
+  $("#groupInfoAvatarField").style.display = "none" // 有绑定群 qq 时才显示
+  modal.style.display = "flex"
+  try {
+    const data = await api(`/bot/${state.currentBotId}/group/${encodeURIComponent(groupId)}/info`)
+    // 群名 + 复制
+    const name = data.group_name || pureId
+    $("#groupInfoName").textContent = name
+    // 头像：优先绑定真实头像（QQ 群），否则按 openid 首字母兜底
+    const qq = state.groupBindings[groupId]
+    const avatarEl = $("#groupInfoAvatar")
+    const fallbackEl = $("#groupInfoAvatarFallback")
+    if (qq) {
+      avatarEl.src = `http://p.qlogo.cn/gh/${qq}/${qq}/640`
+      avatarEl.style.display = "block"
+      fallbackEl.style.display = "none"
+      // 群头像链接字段：可复制 + 可跳转
+      const avatarUrl = `http://p.qlogo.cn/gh/${qq}/${qq}/640`
+      const avatarUrlEl = $("#groupInfoAvatarUrl")
+      avatarUrlEl.textContent = avatarUrl
+      avatarUrlEl.href = avatarUrl
+      $("#groupInfoAvatarField").style.display = "block"
+    } else {
+      avatarEl.style.display = "none"
+      fallbackEl.style.display = "flex"
+      fallbackEl.textContent = (data.group_openid || pureId)[0] || "?"
+    }
+    // 群标签胶囊（淡蓝）
+    const tagsEl = $("#groupInfoTags")
+    const tags = Array.isArray(data.group_tags) ? data.group_tags : []
+    tagsEl.innerHTML = tags.map(t => {
+      const txt = typeof t === "string" ? t : (t?.text || t?.name || "")
+      return txt ? `<span class="group-tag">${escHtml(String(txt))}</span>` : ""
+    }).join("")
+    // 群人数：记录人数（gl）/ 实际人数（接口）
+    const recorded = data.recorded_member_num || 0
+    const actual = data.group_member_num || 0
+    $("#groupInfoMemberNum").textContent = `${recorded} / ${actual}`
+    // openid
+    $("#groupInfoOpenId").textContent = data.group_openid || pureId
+    // 群备注（有的话显示，没有显示空）
+    $("#groupInfoNote").textContent = data.note || "（未设置）"
+    // 群指纹备注
+    $("#groupInfoFingerMemo").textContent = data.group_finger_memo || "（无）"
+    // 群分类
+    $("#groupInfoClassText").textContent = data.group_class_text || "（无）"
+  } catch (err) {
+    $("#groupInfoName").textContent = pureId
+    if (err?.kicked) {
+      $("#groupInfoMemberNum").textContent = "机器人非群成员"
+    } else {
+      $("#groupInfoMemberNum").textContent = "加载失败"
+    }
+    console.error("群信息加载失败:", err)
+  }
+}
+
+function closeGroupInfoModal() {
+  const modal = $("#groupInfoModal")
+  if (modal) modal.style.display = "none"
 }
 
 // ===== rawMsg 展示：过滤 buffer/base64 数据，防止卡顿 =====
@@ -6607,6 +6705,73 @@ function setupEventListeners() {
       }).catch(() => copyFallback())
     } else {
       copyFallback()
+    }
+  })
+
+  // 群信息弹窗：关闭
+  $("#groupInfoModalClose").addEventListener("click", () => {
+    if (isMobile() && $("#groupInfoModal").style.display === "flex") history.back()
+    else closeGroupInfoModal()
+  })
+  $("#groupInfoModal").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) {
+      if (isMobile()) history.back()
+      else closeGroupInfoModal()
+    }
+  })
+  // 群信息弹窗：复制（事件委托）
+  $("#groupInfoModal").addEventListener("click", (e) => {
+    const btn = e.target.closest(".user-info-copy-btn")
+    if (!btn) return
+    const copyType = btn.dataset.copy
+    const groupInfoCopyText = (type) => {
+      if (type === "openid") return $("#groupInfoOpenId").textContent
+      if (type === "member_num") return $("#groupInfoMemberNum").textContent
+      if (type === "avatar_url") return $("#groupInfoAvatarUrl").textContent
+      if (type === "note") return $("#groupInfoNote").textContent
+      if (type === "finger_memo") return $("#groupInfoFingerMemo").textContent
+      if (type === "class_text") return $("#groupInfoClassText").textContent
+      return ""
+    }
+    const text = groupInfoCopyText(copyType)
+    if (!text || text === "-") return
+    function copyFallback() {
+      const ta = document.createElement("textarea")
+      ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px"
+      document.body.appendChild(ta); ta.select()
+      document.execCommand("copy"); document.body.removeChild(ta)
+      btn.classList.add("copied")
+      setTimeout(() => btn.classList.remove("copied"), 1200)
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        btn.classList.add("copied")
+        setTimeout(() => btn.classList.remove("copied"), 1200)
+      }).catch(() => copyFallback())
+    } else {
+      copyFallback()
+    }
+  })
+  // 群信息弹窗：复制群名
+  $("#groupInfoCopyName").addEventListener("click", () => {
+    const text = $("#groupInfoName").textContent
+    if (!text || text === "加载中…") return
+    const btn = $("#groupInfoCopyName")
+    function copyNameFallback() {
+      const ta = document.createElement("textarea")
+      ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px"
+      document.body.appendChild(ta); ta.select()
+      document.execCommand("copy"); document.body.removeChild(ta)
+      btn.classList.add("copied")
+      setTimeout(() => btn.classList.remove("copied"), 1200)
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        btn.classList.add("copied")
+        setTimeout(() => btn.classList.remove("copied"), 1200)
+      }).catch(() => copyNameFallback())
+    } else {
+      copyNameFallback()
     }
   })
   // 昵称复制

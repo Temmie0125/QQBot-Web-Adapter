@@ -755,6 +755,10 @@
       <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 7a5 5 0 019-3M12 7a5 5 0 01-9 3M11 1v3h-3M3 13v-3h3" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
       刷新群信息
     </div>
+    <div class="context-menu-item" data-action="group-info">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="5" r="3"/><path d="M2 13a5 5 0 0110 0z"/></svg>
+      查看群信息
+    </div>
     <div class="context-menu-item danger" data-action="blacklist-group" id="ctxBlGroup">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M4 2h6v1H4V2zM2 4h10v8a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/></svg>
       拉黑群聊
@@ -980,6 +984,85 @@
         <div class="user-info-actions" id="userInfoActions" style="display:none">
           <button class="user-info-bl-btn" id="userInfoBlBtn">拉黑此用户</button>
           <button class="user-info-unbl-btn" id="userInfoUnblBtn" style="display:none;color:#4caf50">取消拉黑此用户</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 群信息弹窗 -->
+  <div class="modal-overlay" id="groupInfoModal" style="display:none">
+    <div class="modal-content user-info-content">
+      <div class="modal-header">
+        <span>群信息</span>
+        <button class="modal-close" id="groupInfoModalClose">✕</button>
+      </div>
+      <div class="user-info-body">
+        <div class="user-info-avatar-wrap">
+          <img class="user-info-avatar" id="groupInfoAvatar" src="" alt="" onerror="this.style.display='none'">
+          <div class="user-info-avatar-fallback" id="groupInfoAvatarFallback" style="display:none"></div>
+        </div>
+        <div class="user-info-nick-row">
+          <span class="user-info-nick" id="groupInfoName"></span>
+          <button class="user-info-copy-btn" id="groupInfoCopyName" title="复制群名">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+          </button>
+        </div>
+        <div class="group-tags" id="groupInfoTags"></div>
+        <div class="user-info-fields">
+          <div class="user-info-field">
+            <span class="user-info-label">群人数（记录 / 实际）</span>
+            <div class="user-info-value-row">
+              <span class="user-info-value" id="groupInfoMemberNum">-</span>
+              <button class="user-info-copy-btn" data-copy="member_num" title="复制">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="user-info-field">
+            <span class="user-info-label">Group Open ID</span>
+            <div class="user-info-value-row">
+              <span class="user-info-value" id="groupInfoOpenId">-</span>
+              <button class="user-info-copy-btn" data-copy="openid" title="复制">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="user-info-field" id="groupInfoAvatarField" style="display:none">
+            <span class="user-info-label">群头像链接</span>
+            <div class="user-info-value-row">
+              <a class="user-info-value" id="groupInfoAvatarUrl" href="#" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">-</a>
+              <button class="user-info-copy-btn" data-copy="avatar_url" title="复制">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="user-info-field">
+            <span class="user-info-label">群备注</span>
+            <div class="user-info-value-row">
+              <span class="user-info-value" id="groupInfoNote">-</span>
+              <button class="user-info-copy-btn" data-copy="note" title="复制">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="user-info-field">
+            <span class="user-info-label">群指纹备注</span>
+            <div class="user-info-value-row">
+              <span class="user-info-value" id="groupInfoFingerMemo">-</span>
+              <button class="user-info-copy-btn" data-copy="finger_memo" title="复制">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="user-info-field">
+            <span class="user-info-label">群分类</span>
+            <div class="user-info-value-row">
+              <span class="user-info-value" id="groupInfoClassText">-</span>
+              <button class="user-info-copy-btn" data-copy="class_text" title="复制">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

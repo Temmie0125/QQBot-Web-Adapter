@@ -1350,17 +1350,85 @@ function getBots() {
   return bots
 }
 
-/** 获取活跃群组名称的辅助函数 */
+/** 获取活跃群组名称的辅助函数（同步优先，缺失则异步补） */
+// 待补队列 + 速率限制：gl 取不到名称时，先返回兜底 id 让前端立即显示，
+// 再把群投入队列，由限速消费者异步调 pickGroup().getGroupInfo() 写回 gl
+const _groupNameBacklog = new Map() // key: `${selfId}:${pureId}` -> { selfId, pureId }
+let _groupNameConsumerRunning = false
+const _GROUP_NAME_INTERVAL = 3000 // 20 QPM：每个群之间间隔 3s 做速率限制
+
+async function _groupNameEnqueue(selfId, pureId) {
+  const key = `${selfId}:${pureId}`
+  if (_groupNameBacklog.has(key)) return
+  _groupNameBacklog.set(key, { selfId, pureId })
+  if (!_groupNameConsumerRunning) {
+    _groupNameConsumerRunning = true
+    _groupNameConsume().catch((e) => logger.error(`[QQBot-Web] 群名补取消费异常: ${e}`))
+  }
+}
+
+async function _groupNameConsume() {
+  try {
+    while (_groupNameBacklog.size) {
+      const [key, item] = _groupNameBacklog.entries().next().value
+      _groupNameBacklog.delete(key)
+      const { selfId, pureId } = item
+      const sep = Bot[selfId]?.adapter?.sep || ":"
+      const fullId = `${selfId}${sep}${pureId}` // 与 QQBot-Plugin 标准一致：gl key 为 selfId:groupOpenid
+      // glMap / exist 提升到 try 外，供 catch 标记 kicked 时使用
+      const glMap = Bot[selfId]?.gl
+      let exist = glMap ? (await glMap.get(fullId)) || {} : {}
+      try {
+        // 读取同样用 fullId（对齐 QQBot-Plugin 的 setGroupMap / getGroupMap）
+        if (!exist?.group_name && !exist?.name) {
+          // 复用 QQBot-Plugin 官方 SDK 的 getGroupInfo（按 group_openid 获取）
+          const sdk = Bot[selfId]?.sdk || Bot[selfId]
+          if (sdk?.getGroupInfo) {
+            const gi = await sdk.getGroupInfo(pureId)
+            const name = gi?.group_name || gi?.groupName || gi?.name || ""
+            if (name && glMap) {
+              // 写回格式对齐 QQBot-Plugin 的 setGroupMap：key=fullId，字段含 group_id/group_name
+              const merged = { ...exist, group_id: fullId, group_openid: pureId, group_name: name, group_member_num: gi?.group_member_num || exist?.group_member_num }
+              if (typeof glMap.set === "function") glMap.set(fullId, merged)
+              else glMap[fullId] = merged
+              logger.info(`[QQBot-Web] 群名补取成功 ${fullId} -> ${name}`)
+            }
+          }
+        }
+      } catch (err) {
+        // 机器人非群成员（11293）等鉴权失败：标记 kicked，避免反复补取
+        const msg = String(err?.message || err || "")
+        if (/11293|非群成员|鉴权失败|kicked/.test(msg)) {
+          if (glMap) {
+            const merged = { ...exist, group_id: fullId, group_openid: pureId, kicked: true }
+            if (typeof glMap.set === "function") glMap.set(fullId, merged)
+            else glMap[fullId] = merged
+            logger.info(`[QQBot-Web] 群 ${fullId} 已退出/非群成员，标记 kicked，停止补取`)
+          }
+        } else {
+          logger.warn(`[QQBot-Web] 群名补取 getGroupInfo(${pureId}) 失败: ${msg}`)
+        }
+      }
+      await new Promise((r) => setTimeout(r, _GROUP_NAME_INTERVAL))
+    }
+  } finally {
+    _groupNameConsumerRunning = false
+  }
+}
+
 async function getGroupName(selfId, rawId) {
   const glMap = Bot[selfId]?.gl
   if (!glMap) return rawId
   const sep = Bot[selfId]?.adapter?.sep || ":"
   const pureId = getPureGroupId(selfId, rawId)
-  // 尝试多种 key 格式：rawId、pureId、selfId:groupOpenid
+  // 与 QQBot-Plugin 标准一致：gl key 为 selfId:groupOpenid
   const fullId = `${selfId}${sep}${pureId}`
-  const info = await glMap.get(rawId) || await glMap.get(pureId) || await glMap.get(fullId)
+  const info = await glMap.get(fullId) || await glMap.get(rawId)
+  if (info?.kicked) return rawId // 已退出/非群成员，不再尝试补取
   if (info?.group_name) return info.group_name
   if (info?.name) return info.name
+  // gl 中暂无名称：先返回兜底 id 让前端立即显示，再异步补取
+  _groupNameEnqueue(selfId, pureId)
   return rawId
 }
 
@@ -2924,6 +2992,72 @@ Bot.express.get(`${WEB_BASE}/api/bot/:selfId/groups`, async (req, res) => {
     res.json(groups)
   } catch (err) {
     logger.error("[QQBot-Web] 群列表接口错误:", err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 获取群详细信息（群信息弹窗）：直接调官方 SDK getGroupInfo，返回完整群资料并写回 gl
+Bot.express.get(`${WEB_BASE}/api/bot/:selfId/group/:groupId/info`, async (req, res) => {
+  try {
+    const { selfId, groupId } = req.params
+    if (!Bot[selfId]) return res.status(404).json({ error: "Bot 未找到" })
+    const pureId = getPureGroupId(selfId, groupId)
+    const sep = Bot[selfId]?.adapter?.sep || ":"
+    const fullId = `${selfId}${sep}${pureId}`
+    const glMap = Bot[selfId]?.gl
+    // 优先从 gl 读取已有资料
+    let info = glMap ? (await glMap.get(fullId)) || {} : {}
+    const recordedMemberNum = info?.group_member_num ?? info?.member_count ?? 0 // gl 中记录的人数
+    if (!info?.kicked) {
+      const sdk = Bot[selfId]?.sdk || Bot[selfId]
+      if (sdk?.getGroupInfo) {
+        try {
+          const gi = await sdk.getGroupInfo(pureId)
+          info = {
+            group_openid: gi?.group_openid || pureId,
+            group_name: gi?.group_name || gi?.groupName || gi?.name || info?.group_name || "",
+            group_finger_memo: gi?.group_finger_memo || gi?.fingerMemo || "",
+            group_class_text: gi?.group_class_text || gi?.classText || "",
+            group_tags: gi?.group_tags || [],
+            group_member_num: gi?.group_member_num ?? gi?.memberNum ?? info?.group_member_num ?? 0,
+          }
+          // 写回 gl，对齐 setGroupMap 标准（key=fullId）
+          if (glMap) {
+            const merged = { ...(await glMap.get(fullId) || {}), ...info, group_id: fullId }
+            if (typeof glMap.set === "function") glMap.set(fullId, merged)
+            else glMap[fullId] = merged
+          }
+        } catch (err) {
+          const msg = String(err?.message || err || "")
+          if (/11293|非群成员|鉴权失败|kicked/.test(msg)) {
+            if (glMap) {
+              const merged = { ...(await glMap.get(fullId) || {}), group_id: fullId, group_openid: pureId, kicked: true }
+              if (typeof glMap.set === "function") glMap.set(fullId, merged)
+              else glMap[fullId] = merged
+            }
+            return res.status(404).json({ error: "机器人非群成员，无法获取群信息", kicked: true })
+          }
+          logger.warn(`[QQBot-Web] 群详情 getGroupInfo(${pureId}) 失败: ${msg}`)
+        }
+      }
+    }
+    // 群备注（wind-group-name 哈希）
+    let note = ""
+    try {
+      note = (await redis.hGet("wind-group-name", groupId)) || (await redis.hGet("wind-group-name", pureId)) || ""
+    } catch { /* ignore */ }
+    res.json({
+      group_openid: info.group_openid || pureId,
+      group_name: info.group_name || "",
+      group_finger_memo: info.group_finger_memo || "",
+      group_class_text: info.group_class_text || "",
+      group_tags: info.group_tags || [],
+      group_member_num: info.group_member_num || 0,
+      recorded_member_num: recordedMemberNum || 0,
+      note: note || "",
+    })
+  } catch (err) {
+    logger.error("[QQBot-Web] 群详情接口错误:", err)
     res.status(500).json({ error: String(err) })
   }
 })

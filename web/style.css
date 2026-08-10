@@ -2375,10 +2375,16 @@ body {
 }
 
 /* ===== 用户信息弹窗 ===== */
-.user-info-content { max-width: 420px; }
+.user-info-content {
+  max-width: 420px; width: 92%;
+  max-height: 85vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
 .user-info-body {
   padding: 20px 24px;
   display: flex; flex-direction: column; align-items: center; gap: 16px;
+  overflow-y: auto;
 }
 .user-info-avatar-wrap {
   width: 80px; height: 80px; border-radius: 50%;
@@ -2422,6 +2428,20 @@ body {
 }
 .user-info-copy-btn:hover { background: var(--bg-hover); color: var(--accent); }
 .user-info-copy-btn.copied { color: var(--success); border-color: var(--success); }
+
+/* ===== 群信息弹窗标签胶囊 ===== */
+.group-tags {
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+  width: 100%; max-height: 80px; overflow-y: auto;
+}
+.group-tags:empty { display: none; }
+.group-tag {
+  font-size: 12px; line-height: 1.4;
+  color: #2f6fb0; background: rgba(47, 111, 176, 0.12);
+  border: 1px solid rgba(47, 111, 176, 0.25);
+  border-radius: 12px; padding: 2px 10px;
+  white-space: nowrap;
+}
 .user-info-fields {
   width: 100%; display: flex; flex-direction: column; gap: 10px;
 }
