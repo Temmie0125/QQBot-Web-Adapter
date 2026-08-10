@@ -4799,6 +4799,92 @@ Bot.express.post(`${WEB_BASE}/api/bot/:selfId/blacklist/group`, async (req, res)
   }
 })
 
+// ====== 群成员禁言（供 Web 端右键菜单使用） ======
+
+// 禁言
+Bot.express.post(`${WEB_BASE}/api/bot/:selfId/group/:groupId/mute`, async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    const { selfId, groupId } = req.params
+    const { user_id, minutes } = req.body || {}
+    if (!user_id || !minutes) return res.status(400).json({ error: "缺少 user_id 或 minutes" })
+    const dur = parseInt(minutes, 10)
+    if (!Number.isInteger(dur) || dur <= 0) return res.status(400).json({ error: "禁言时长必须为正整数（分钟）" })
+
+    const bot = Bot[String(selfId)]
+    if (!bot?.pickGroup) return res.status(400).json({ error: "Bot 未连接" })
+
+    await bot.pickGroup(String(groupId)).muteMember(String(user_id), dur * 60)
+
+    // 记录到 Redis，设置与禁言时长一致的过期时间
+    const muteKey = `qqbot:mute:${groupId}:${user_id}`
+    const r = bot.redis || redis
+    if (r) {
+      await r.set(muteKey, String(selfId))
+      await r.expire(muteKey, dur * 60)
+    }
+
+    res.json({ ok: true })
+  } catch (err) {
+    logger.error("[web-mute]", err)
+    res.status(500).json({ error: String(err?.message || err) })
+  }
+})
+
+// 取消禁言
+Bot.express.post(`${WEB_BASE}/api/bot/:selfId/group/:groupId/unmute`, async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    const { selfId, groupId } = req.params
+    const { user_id } = req.body || {}
+    if (!user_id) return res.status(400).json({ error: "缺少 user_id" })
+
+    const bot = Bot[String(selfId)]
+    if (!bot?.pickGroup) return res.status(400).json({ error: "Bot 未连接" })
+
+    await bot.pickGroup(String(groupId)).unmuteMember(String(user_id))
+
+    // 从 Redis 删除禁言记录
+    const muteKey = `qqbot:mute:${groupId}:${user_id}`
+    const r = bot.redis || redis
+    if (r) await r.del(muteKey)
+
+    res.json({ ok: true })
+  } catch (err) {
+    logger.error("[web-unmute]", err)
+    res.status(500).json({ error: String(err?.message || err) })
+  }
+})
+
+// 查询群内禁言用户列表
+Bot.express.get(`${WEB_BASE}/api/bot/:selfId/group/:groupId/muted`, async (req, res) => {
+  try {
+    if (config.login?.enabled !== false && !(await getSession(req))) return res.status(401).json({ error: "未登录" })
+    const { selfId, groupId } = req.params
+    const muted = {}
+
+    const r = (Bot[String(selfId)]?.redis) || redis
+    if (r) {
+      const pattern = `qqbot:mute:${groupId}:*`
+      let cursor = "0"
+      do {
+        const reply = await r.scan(cursor, { MATCH: pattern, COUNT: 200 })
+        cursor = reply.cursor
+        if (reply.keys) {
+          for (const k of reply.keys) {
+            muted[k.split(":").pop()] = true
+          }
+        }
+      } while (String(cursor) !== "0")
+    }
+
+    res.json({ ok: true, muted })
+  } catch (err) {
+    logger.error("[web-muted]", err)
+    res.status(500).json({ error: String(err?.message || err) })
+  }
+})
+
 logger.info(logger.green("QQBot Web 适配器 加载完成"))
 logger.info(logger.green(`控制台地址：${Bot.url}${WEB_BASE}/`))
 logger.info("-------------------------")

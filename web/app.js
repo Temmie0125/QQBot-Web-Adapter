@@ -52,6 +52,7 @@ const state = {
   userInfoSource: null,         // 用户信息弹窗来源："chat" | "memberList"
   unreadCount: 0,              // 未读消息计数
   firstUnreadEl: null,         // 第一条未读消息的 DOM 元素引用（用于点击小球后定位）
+  mutedUsers: {},              // 禁言用户缓存 { group_id: { user_id: true } }
 }
 
 // ===== DOM 引用缓存 =====
@@ -1051,6 +1052,7 @@ async function selectGroup(groupId) {
     updateReplyPreview()
     updateMsgIdReplyPreview()
     openChat(groupId)
+    loadMutedUsers()
     // 移动端切到聊天视图
     if (isMobile()) showMobileChat()
     // 订阅新群
@@ -2799,7 +2801,7 @@ function showContextMenu(e, message) {
 
   // 通知类消息与非通知消息的菜单项适配
   const noticeOnly = new Set(['raw', 'rawevent', 'reply_eventid', 'userInfo', 'delete'])
-  const noticeHide = new Set(['copy', 'copymsg', 'reply', 'reply_msgid', 'echo', 'echo_md', 'at', 'recall'])
+  const noticeHide = new Set(['copy', 'copymsg', 'reply', 'reply_msgid', 'echo', 'echo_md', 'at', 'recall', 'mute', 'unmute'])
 
   for (const item of menu.querySelectorAll('.context-menu-item')) {
     const action = item.dataset.action
@@ -2838,6 +2840,29 @@ function showContextMenu(e, message) {
     if (blDivider) blDivider.style.display = "none"
     $("#ctxBlUser").style.display = "none"
     $("#ctxUnblUser").style.display = "none"
+  }
+
+  // 禁言/取消禁言菜单项：仅群聊、非Bot、非自己、普通成员(member)、非通知
+  const muteDivider = menu.querySelector('[data-divider="mute"]')
+  const muteItem = menu.querySelector('[data-action="mute"]')
+  const unmuteItem = menu.querySelector('[data-action="unmute"]')
+  if (!isNotice && !message.me && !message.is_bot && state.chatType === "group") {
+    const role = message.sender?.role
+    const userId = message.user_id || message.sender?.user_id
+    if (role === "member" && userId) {
+      muteDivider.style.display = ""
+      const muted = isUserMuted(state.currentGroupId, userId)
+      muteItem.style.display = muted ? "none" : ""
+      unmuteItem.style.display = muted ? "" : "none"
+    } else {
+      muteDivider.style.display = "none"
+      muteItem.style.display = "none"
+      unmuteItem.style.display = "none"
+    }
+  } else {
+    muteDivider.style.display = "none"
+    muteItem.style.display = "none"
+    unmuteItem.style.display = "none"
   }
 
   menu.style.display = "block"
@@ -3043,6 +3068,20 @@ async function loadBlacklistData() {
   }
 }
 
+async function loadMutedUsers() {
+  if (!state.currentBotId || !state.currentGroupId) return
+  try {
+    const data = await api(`/bot/${state.currentBotId}/group/${state.currentGroupId}/muted`)
+    state.mutedUsers[state.currentGroupId] = data.muted || {}
+  } catch (err) {
+    console.error("[loadMutedUsers] 加载禁言列表失败:", err)
+  }
+}
+
+function isUserMuted(groupId, userId) {
+  return !!(state.mutedUsers[groupId] && state.mutedUsers[groupId][String(userId)])
+}
+
 function handleGroupContextAction(action) {
   if (!groupContextGroupId) return
   switch (action) {
@@ -3210,6 +3249,55 @@ async function saveBindGroupQQ() {
   } catch (err) {
     $("#bindModalHint").textContent = err.message || "绑定失败"
     console.error("绑定群号失败:", err)
+  }
+}
+
+// ===== 禁言弹窗 =====
+let muteContextMessage = null
+
+function showMuteDialog(message) {
+  muteContextMessage = message
+  const userName = message.sender?.memberName || message.sender?.nickname || message.sender?.user_id || message.user_id || "未知用户"
+  $("#muteModalUserName").textContent = userName
+  $("#muteModalInput").value = ""
+  $("#muteModal").style.display = "flex"
+}
+
+function closeMuteDialog() {
+  $("#muteModal").style.display = "none"
+  muteContextMessage = null
+}
+
+async function confirmMute() {
+  const input = $("#muteModalInput")
+  const val = parseInt(input.value, 10)
+  if (!Number.isInteger(val) || val <= 0) {
+    input.focus()
+    return
+  }
+
+  const msg = muteContextMessage
+  if (!msg) return
+  const uid = msg.user_id || msg.sender?.user_id
+  const gid = state.currentGroupId
+  const btn = $("#muteModalConfirm")
+  btn.disabled = true
+  try {
+    const r = await api(`/bot/${state.currentBotId}/group/${gid}/mute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: uid, minutes: val }),
+    })
+    if (!r.ok) throw new Error(r.error || "禁言失败")
+    showToast(`已禁言 ${val} 分钟`)
+    // 更新缓存
+    if (!state.mutedUsers[gid]) state.mutedUsers[gid] = {}
+    state.mutedUsers[gid][String(uid)] = true
+    closeMuteDialog()
+  } catch (err) {
+    showToast("禁言失败: " + err.message)
+  } finally {
+    btn.disabled = false
   }
 }
 
@@ -3587,6 +3675,30 @@ async function handleContextAction(action) {
       } catch (err) {
         console.error("取消拉黑用户失败:", err)
         showToast("取消拉黑失败: " + err.message)
+      }
+      break
+    }
+    case "mute": {
+      showMuteDialog(contextMessage)
+      break
+    }
+    case "unmute": {
+      if (!contextMessage) break
+      const uid = contextMessage.user_id || contextMessage.sender?.user_id
+      const gid = state.currentGroupId
+      if (!uid || !gid) break
+      try {
+        const r = await api(`/bot/${state.currentBotId}/group/${gid}/unmute`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: uid }),
+        })
+        if (!r.ok) throw new Error(r.error || "取消禁言失败")
+        showToast("已取消禁言")
+        // 更新缓存
+        if (state.mutedUsers[gid]) delete state.mutedUsers[gid][String(uid)]
+      } catch (err) {
+        showToast("取消禁言失败: " + err.message)
       }
       break
     }
@@ -6654,6 +6766,15 @@ function setupEventListeners() {
   })
   $("#bindGroupModal").addEventListener("click", (e) => {
     if (e.target === e.currentTarget) closeBindGroupModal()
+  })
+  // 禁言弹窗
+  $("#muteModalClose").addEventListener("click", closeMuteDialog)
+  $("#muteModalConfirm").addEventListener("click", confirmMute)
+  $("#muteModalInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") confirmMute()
+  })
+  $("#muteModal").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeMuteDialog()
   })
 
   // 用户信息弹窗

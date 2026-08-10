@@ -718,6 +718,15 @@
       <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="5" r="3"/><path d="M2 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/><rect x="5" y="0" width="4" height="2" rx="1"/></svg>
       用户信息
     </div>
+    <div class="context-menu-divider" data-divider="mute" style="display:none"></div>
+    <div class="context-menu-item warn" data-action="mute" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M7 1L1 13h12L7 1z"/><path d="M7 5v3M7 10v1" stroke="#fff" stroke-width="1.5" fill="none"/></svg>
+      禁言
+    </div>
+    <div class="context-menu-item" data-action="unmute" style="display:none;color:#4caf50">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M3 7h8M6 3l2 4-2 4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+      取消禁言
+    </div>
     <div class="context-menu-item danger" data-action="recall" style="display:none">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M2 3h10v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3z"/><path d="M5 1h4v2H5V1zM5 6v5M7 6v5M9 6v5" stroke="currentColor" stroke-width="1" fill="none"/></svg>
       撤回消息
@@ -819,6 +828,22 @@
         <p class="bind-modal-hint" id="bindModalHint" style="color:#aaa;font-size:12px;margin-top:4px"></p>
         <div class="note-modal-actions">
           <button class="note-modal-btn note-modal-save" id="bindModalSave">确认绑定</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="muteModal" style="display:none">
+    <div class="modal-content note-modal-content">
+      <div class="modal-header">
+        <span>禁言用户</span>
+        <button class="modal-close" id="muteModalClose">✕</button>
+      </div>
+      <div class="note-modal-body">
+        <div class="note-modal-group-id" id="muteModalUserName"></div>
+        <input type="number" class="note-modal-input" id="muteModalInput" placeholder="禁言时长（分钟）" min="1" step="1" inputmode="numeric">
+        <div class="note-modal-actions">
+          <button class="note-modal-btn note-modal-save" id="muteModalConfirm">确认禁言</button>
         </div>
       </div>
     </div>
