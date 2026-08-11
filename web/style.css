@@ -130,9 +130,32 @@ body {
 .bot-dropdown-item:hover { background: var(--bg-hover); }
 .bot-dropdown-item.active { background: var(--accent-light); }
 .bot-dropdown-item .bot-avatar { width: 40px; height: 40px; }
-.bot-dropdown-item .bot-dd-info { display: flex; flex-direction: column; }
+.bot-dropdown-item .bot-dd-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .bot-dropdown-item .bot-dd-nick { font-weight: 600; font-size: 14px; }
 .bot-dropdown-item .bot-dd-qq { font-size: 12px; color: var(--text-muted); }
+.bot-dropdown-item .bot-dd-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+
+/* 开关 */
+.bot-toggle { position: relative; display: inline-block; width: 38px; height: 20px; cursor: pointer; }
+.bot-toggle-input { position: absolute; opacity: 0; width: 0; height: 0; }
+.bot-toggle-slider { position: absolute; inset: 0; background: var(--text-muted); border-radius: 999px; transition: background 0.15s; }
+.bot-toggle-slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: transform 0.15s; }
+.bot-toggle-input:checked + .bot-toggle-slider { background: var(--accent); }
+.bot-toggle-input:checked + .bot-toggle-slider::before { transform: translateX(18px); }
+.bot-toggle-input:disabled { cursor: not-allowed; }
+
+/* 删除按钮 */
+.bot-del-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: transparent; color: var(--text-muted); border-radius: 6px; cursor: pointer; transition: background 0.12s, color 0.12s; }
+.bot-del-btn:hover { background: rgba(244,67,54,0.12); color: #f44336; }
+
+/* 确认弹窗 */
+.confirm-content { max-width: 360px; }
+.confirm-body { padding: 18px 20px; font-size: 14px; line-height: 1.6; color: var(--text); white-space: normal; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 20px 18px; }
+.confirm-actions button { padding: 7px 18px; border-radius: 8px; border: none; font-size: 14px; cursor: pointer; }
+.confirm-cancel { background: var(--bg-hover); color: var(--text); }
+.confirm-ok { background: #f44336; color: #fff; }
+.confirm-ok:hover { background: #d8342a; }
 
 .bot-dropdown-add {
   display: flex; align-items: center; justify-content: center; gap: 6px;

@@ -467,6 +467,15 @@ function renderBotDropdown() {
         <div class="bot-dd-nick">${escHtml(bot.nickname || bot.self_id)}</div>
         <div class="bot-dd-qq">BotQQ: ${bot.self_id}</div>
       </div>
+      <div class="bot-dd-actions">
+        <label class="bot-toggle" title="启用/关闭">
+          <input type="checkbox" class="bot-toggle-input" data-action="toggle" data-bot-id="${bot.self_id}" ${bot.enabled !== false ? 'checked' : ''}>
+          <span class="bot-toggle-slider"></span>
+        </label>
+        <button class="bot-del-btn" data-action="delete" data-bot-id="${bot.self_id}" title="删除 Bot">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+      </div>
     </div>
   `).join("") || '<div class="bot-dropdown-item" style="color:var(--text-muted)">没有可用的 Bot</div>'
 
@@ -486,10 +495,62 @@ function renderBotDropdown() {
   }
 
   dropdown.querySelectorAll(".bot-dropdown-item[data-bot-id]").forEach(el => {
-    el.addEventListener("click", () => {
-      selectBot(el.dataset.botId)
+    const id = el.dataset.botId
+    el.addEventListener("click", (e) => {
+      // 点击开关/删除按钮时不触发选择
+      if (e.target.closest(".bot-toggle") || e.target.closest(".bot-del-btn")) return
+      selectBot(id)
       closeBotDropdown()
     })
+
+    const toggle = el.querySelector(".bot-toggle-input")
+    if (toggle) {
+      toggle.addEventListener("click", (e) => e.stopPropagation())
+      toggle.addEventListener("change", async () => {
+        const on = toggle.checked
+        toggle.disabled = true
+        try {
+          if (on) {
+            await api(`/bot/${id}/enable`, { method: "POST" })
+            showToast(`已启用 Bot ${id}`)
+          } else {
+            await api(`/bot/${id}/disable`, { method: "POST" })
+            showToast(`已关闭 Bot ${id}`)
+          }
+          await loadBots()
+        } catch (err) {
+          console.error("[bot toggle] 失败:", err)
+          showToast(`操作失败：${err.message || err}`)
+          toggle.checked = !on
+        } finally {
+          toggle.disabled = false
+        }
+      })
+    }
+
+    const delBtn = el.querySelector(".bot-del-btn")
+    if (delBtn) {
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation()
+        showConfirm(`确定删除 Bot ${id} 吗？\n将关闭连接并从配置文件中移除其 token。`, async (ok) => {
+          if (!ok) return
+          try {
+            await api(`/bot/${id}/delete`, { method: "POST" })
+            showToast(`已删除 Bot ${id}`)
+            await loadBots()
+            // 若删除的是当前 Bot，则清空选择
+            if (state.currentBotId === id) {
+              state.currentBotId = null
+              state.currentBot = null
+              renderBotSelector()
+            }
+          } catch (err) {
+            console.error("[bot delete] 失败:", err)
+            showToast(`删除失败：${err.message || err}`)
+          }
+        })
+      })
+    }
   })
 }
 
@@ -508,6 +569,30 @@ function showToast(msg) {
     el.classList.remove("show")
     setTimeout(() => el.remove(), 300)
   }, 2000)
+}
+
+// 通用确认弹窗：回调 (ok) => {}，ok 为 true 表示确认
+function showConfirm(message, cb) {
+  const overlay = document.createElement("div")
+  overlay.className = "modal-overlay confirm-overlay show"
+  overlay.innerHTML = `
+    <div class="modal-content confirm-content">
+      <div class="modal-header"><span>确认操作</span></div>
+      <div class="confirm-body">${escHtml(message).replace(/\n/g, "<br>")}</div>
+      <div class="confirm-actions">
+        <button class="confirm-cancel">取消</button>
+        <button class="confirm-ok">确定</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+  const close = (ok) => {
+    overlay.remove()
+    try { cb(ok) } catch (e) { console.error(e) }
+  }
+  overlay.querySelector(".confirm-cancel").addEventListener("click", () => close(false))
+  overlay.querySelector(".confirm-ok").addEventListener("click", () => close(true))
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(false) })
 }
 
 // 角色徽章 HTML：群主（橙底白字）、管理员（绿底白字），群员不显示

@@ -1345,6 +1345,7 @@ function getBots() {
       nickname: info.username || info.nickname || id,
       avatar: toHttps(info.avatar) || `https://q.qlogo.cn/g?b=qq&s=0&nk=${id}`,
       appid: info.appid || "",
+      enabled: !Bot[id]._webDisabled,
     })
   }
   return bots
@@ -2945,6 +2946,91 @@ Bot.express.get(`${WEB_BASE}/api/bots`, (req, res) => {
     const bots = getBots()
     res.json(bots)
   } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 停止某 Bot 的 SDK 连接（不删除配置）
+function stopBotSdk(id) {
+  const b = Bot[id]
+  if (!b) return
+  try { b.logout?.() } catch {}
+  try { b.sdk?.stop?.() } catch {}
+}
+
+// 从全局 Bot 注册表中移除某 Bot（仅内存，不改配置文件）
+function removeBotFromGlobal(id) {
+  try {
+    if (Array.isArray(Bot.uin)) {
+      const i = Bot.uin.indexOf(id)
+      if (i >= 0) Bot.uin.splice(i, 1)
+    }
+  } catch {}
+  try { delete Bot[id] } catch {}
+}
+
+// 启用（重新连接）某 Bot：优先复用已存在实例，否则用配置文件中的 token 热连接
+async function enableBotById(id) {
+  const uinStr = String(id)
+  const cfg = await readQQBotConfig()
+  const tok = (cfg.token || []).find(t => t.split(":")[0] === uinStr)
+  if (!tok) throw new Error("配置文件中找不到该 Bot 的 token")
+  const parts = tok.split(":")
+  const appid = parts[1]
+  const secret = parts[3]
+  // saveAndConnectBot 会更新配置并热连接（已存在实例则重启 sdk）
+  const r = await saveAndConnectBot(uinStr, appid, secret, parts[4] || "1", parts[5] || "0")
+  if (Bot[uinStr]) Bot[uinStr]._webDisabled = false
+  return r
+}
+
+// 关闭（停用）某 Bot：停止 SDK，保留配置，标记内存禁用
+Bot.express.post(`${WEB_BASE}/api/bot/:selfId/disable`, async (req, res) => {
+  try {
+    const { selfId } = req.params
+    if (!Bot[selfId]) return res.status(404).json({ error: "Bot 未找到" })
+    stopBotSdk(selfId)
+    Bot[selfId]._webDisabled = true
+    logger.mark(`[QQBot-Web] Bot ${selfId} 已关闭`)
+    res.json({ ok: true })
+  } catch (err) {
+    logger.error("[QQBot-Web] 关闭 Bot 失败:", err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 启用（重新连接）某 Bot
+Bot.express.post(`${WEB_BASE}/api/bot/:selfId/enable`, async (req, res) => {
+  try {
+    const { selfId } = req.params
+    await enableBotById(selfId)
+    logger.mark(`[QQBot-Web] Bot ${selfId} 已启用`)
+    res.json({ ok: true })
+  } catch (err) {
+    logger.error("[QQBot-Web] 启用 Bot 失败:", err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 删除某 Bot：停止连接、从配置文件移除 token、从全局注册表移除
+Bot.express.post(`${WEB_BASE}/api/bot/:selfId/delete`, async (req, res) => {
+  try {
+    const { selfId } = req.params
+    if (!Bot[selfId]) return res.status(404).json({ error: "Bot 未找到" })
+
+    stopBotSdk(selfId)
+    removeBotFromGlobal(selfId)
+
+    // 从 QQBot.yaml 配置文件中移除对应 token
+    const cfg = await readQQBotConfig()
+    if (Array.isArray(cfg.token)) {
+      cfg.token = cfg.token.filter(t => t.split(":")[0] !== String(selfId))
+      await writeQQBotConfig(cfg)
+    }
+    logger.mark(`[QQBot-Web] Bot ${selfId} 已删除（配置与内存均已移除）`)
+    res.json({ ok: true })
+  } catch (err) {
+    logger.error("[QQBot-Web] 删除 Bot 失败:", err)
     res.status(500).json({ error: String(err) })
   }
 })
