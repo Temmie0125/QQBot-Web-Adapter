@@ -24,6 +24,12 @@ const state = {
   currentGroupId: null,
   currentGroup: null,
   privateChats: [],
+  privatePageSize: 20,
+  privateOffset: 0,
+  privateHasMore: true,
+  privateLoading: false,
+  privateTotal: 0,
+  privateRendered: 0,
   currentPrivateUserId: null,
   currentPrivateUser: null,
   chatType: "group",  // "group" | "private"
@@ -115,6 +121,57 @@ function addLongPress(el, callback) {
   }, { passive: true })
   el.addEventListener("touchend", () => { if (timer) { clearTimeout(timer); timer = null } })
   el.addEventListener("touchmove", () => { if (timer) { clearTimeout(timer); timer = null } })
+}
+
+// ===== 头像懒加载（IntersectionObserver） =====
+// 元素带 data-lazy-src 时，进入视口才真正加载头像；支持 <img>（设 src）与
+// 带 data-lazy-bg 的 div（设 background-image）。加载失败时按 data-lazy-fallback 处理。
+let _avatarObserver = null
+function getAvatarObserver() {
+  if (_avatarObserver) return _avatarObserver
+  if (!("IntersectionObserver" in window)) {
+    // 不支持时退化为立即加载
+    _avatarObserver = {
+      observe(el) { loadLazyAvatar(el) },
+      unobserve() {},
+      disconnect() {},
+    }
+    return _avatarObserver
+  }
+  _avatarObserver = new IntersectionObserver((entries, obs) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) {
+        loadLazyAvatar(entry.target)
+        obs.unobserve(entry.target)
+      }
+    }
+  }, { root: null, rootMargin: "200px", threshold: 0.01 })
+  return _avatarObserver
+}
+function loadLazyAvatar(el) {
+  const url = el.dataset.lazySrc
+  if (!url) return
+  if (el.dataset.lazyBg !== undefined) {
+    el.style.backgroundImage = `url(${url})`
+    el.dataset.lazySrc = ""
+    return
+  }
+  // img 元素
+  el.addEventListener("error", () => {
+    const fb = el.dataset.lazyFallback
+    if (fb !== undefined) {
+      if (el.parentElement) el.outerHTML = fb
+    } else {
+      el.style.display = "none"
+    }
+  }, { once: true })
+  el.src = url
+  el.dataset.lazySrc = ""
+}
+// 渲染后批量观察列表/消息中的懒加载头像
+function observeLazyAvatars(root = document) {
+  const obs = getAvatarObserver()
+  root.querySelectorAll("[data-lazy-src]").forEach(el => obs.observe(el))
 }
 
 // ===== 自定义扩展页面（开发者通过 webadapter/page.{js,json} 或 Bot.webAdapter 注册） =====
@@ -950,10 +1007,11 @@ function renderGroupList() {
         const boundInfo = qq ? state.boundGroupInfos[qq] : null
         let avatarChar = (pureId || "#")[0]
         let avatarHtml = `<div class="group-avatar group-avatar-clickable" data-group-id="${g.group_id}" title="查看群信息">${escHtml(avatarChar)}</div>`
-        // 有绑定的群优先使用真实头像
+        // 有绑定的群优先使用真实头像（懒加载）
         if (qq) {
           const avatarUrl = `http://p.qlogo.cn/gh/${qq}/${qq}/640`
-          avatarHtml = `<img class="group-avatar-img group-avatar-clickable" data-group-id="${g.group_id}" src="${escHtml(avatarUrl)}" alt="" title="查看群信息" onerror="this.outerHTML='<div class=\\'group-avatar group-avatar-clickable\\' data-group-id=\\'${g.group_id}\\'>${escHtml(avatarChar)}</div>'">`
+          const fb = `<div class=\\'group-avatar group-avatar-clickable\\' data-group-id=\\'${g.group_id}\\'>${escHtml(avatarChar)}</div>`
+          avatarHtml = `<img class="group-avatar-img group-avatar-clickable" data-group-id="${g.group_id}" data-lazy-src="${escHtml(avatarUrl)}" data-lazy-fallback="${fb}" alt="" title="查看群信息">`
         }
         let nameHtml
         if (note) {
@@ -996,6 +1054,9 @@ function renderGroupList() {
       showGroupInfoModal(el.dataset.groupId)
     })
   })
+
+  // 懒加载群头像
+  observeLazyAvatars(listEl)
 
   // 若仍有群名是兜底 id（后端正在异步补取群名），稍后自动刷新一次群列表
   const hasPending = state.groups.some(g => {
@@ -1074,57 +1135,102 @@ async function selectGroup(groupId) {
 }
 
 // ===== 私聊列表 =====
-async function loadPrivateChats() {
-  if (!state.currentBotId) return
+async function loadPrivateChats(reset = true) {
+  if (!state.currentBotId || state.privateLoading) return
   const listEl = $("#groupListItems")
 
+  // 重置分页
+  if (reset) {
+    state.privateChats = []
+    state.privateOffset = 0
+    state.privateHasMore = true
+    state.privateTotal = 0
+    listEl.innerHTML = '<div class="group-list-empty">加载中…</div>'
+    removePrivateSentinel()
+  }
+
+  // 没有更多则不请求
+  if (!state.privateHasMore) return
+
+  state.privateLoading = true
   try {
-    state.privateChats = await api(`/bot/${state.currentBotId}/private-chats`)
+    const data = await api(`/bot/${state.currentBotId}/private-chats?offset=${state.privateOffset}&limit=${state.privatePageSize}`)
+    const users = Array.isArray(data.users) ? data.users : []
+    state.privateChats.push(...users)
+    state.privateOffset += users.length
+    state.privateTotal = typeof data.total === "number" ? data.total : state.privateOffset
+    state.privateHasMore = !!data.hasMore
     renderPrivateChatList()
   } catch (err) {
     console.error("[loadPrivateChats] 失败:", err)
-    listEl.innerHTML = '<div class="group-list-empty">加载私聊列表失败</div>'
+    if (reset) listEl.innerHTML = '<div class="group-list-empty">加载私聊列表失败</div>'
+  } finally {
+    state.privateLoading = false
   }
 }
 
-function renderPrivateChatList() {
+// 私聊列表滚动到底部自动加载下一页（IntersectionObserver 哨兵）
+let _privateSentinelObserver = null
+function ensurePrivateSentinel() {
   const listEl = $("#groupListItems")
-  const searchTerm = ($("#groupSearch")?.value || "").toLowerCase()
+  if (!listEl) return
+  // 已存在则跳过
+  if (listEl.querySelector(".private-sentinel")) return
+  const sentinel = document.createElement("div")
+  sentinel.className = "private-sentinel"
+  sentinel.style.height = "1px"
+  listEl.appendChild(sentinel)
 
-  const matchSearch = (u) =>
-    String(u.user_id).toLowerCase().includes(searchTerm) ||
-    (u.nickname || "").toLowerCase().includes(searchTerm)
+  if (!_privateSentinelObserver) {
+    _privateSentinelObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          // 还有更多且未在加载时，自动加载下一页
+          if (state.privateHasMore && !state.privateLoading) {
+            loadPrivateChats(false)
+          }
+        }
+      }
+    }, { root: listEl, rootMargin: "120px", threshold: 0 })
+  }
+  _privateSentinelObserver.observe(sentinel)
+}
+function removePrivateSentinel() {
+  const listEl = $("#groupListItems")
+  if (!listEl) return
+  const s = listEl.querySelector(".private-sentinel")
+  if (s) s.remove()
+}
 
-  const base = state.privateChats.filter(matchSearch)
+function privateChatItemHtml(u, pinSet) {
+  const avatarLazy = u.avatar
+    ? `data-lazy-src="${escHtml(u.avatar)}" data-lazy-bg`
+    : ""
+  const avatarInner = u.avatar ? '' : escHtml((u.nickname || String(u.user_id))[0])
+  const isPinned = pinSet.has(String(u.user_id))
+  const blBadge = u.is_blacklisted ? '<span class="blacklist-badge">拉黑</span>' : ''
+  const safeOpenid = escHtml(u.openid || "")
+  const safeUnionid = escHtml(u.unionid || "")
+  return `
+  <div class="group-list-item ${String(u.user_id) === state.currentPrivateUserId && state.chatType === "private" ? 'active' : ''}${isPinned ? ' pinned' : ''}"
+       data-user-id="${String(u.user_id)}"
+       data-openid="${safeOpenid}"
+       data-unionid="${safeUnionid}">
+    <div class="group-avatar user-avatar" ${avatarLazy}>${avatarInner}</div>
+      <div class="group-item-info">
+        <div class="group-item-name-row"><div class="group-item-name">${escHtml(u.nickname || String(u.user_id))}</div>${blBadge}</div>
+        <div class="group-item-id">${escHtml(String(u.user_id))}</div>
+      </div>
+    </div>
+  `
+}
 
-  // 置顶私聊优先展示（不管是否在活跃列表，只要置顶即可）
+// ordered：已过滤+排序后的私聊数组；start/end：本次要渲染的切片；container：用于监听头像的临时容器
+function appendPrivateItems(ordered, start, end, container) {
   const pinSet = new Set(state.pinnedPrivate.map(String))
-  const pinnedItems = base.filter(u => pinSet.has(String(u.user_id)))
-  const normalItems = base.filter(u => !pinSet.has(String(u.user_id)))
-  const ordered = [...pinnedItems, ...normalItems]
-
-  listEl.innerHTML = ordered.length
-    ? ordered.map(u => {
-        const avatarSrc = u.avatar ? `style="background-image:url(${escHtml(u.avatar)})"` : ""
-        const isPinned = pinSet.has(String(u.user_id))
-        const blBadge = u.is_blacklisted ? '<span class="blacklist-badge">拉黑</span>' : ''
-        const safeOpenid = escHtml(u.openid || "")
-        const safeUnionid = escHtml(u.unionid || "")
-        return `
-        <div class="group-list-item ${String(u.user_id) === state.currentPrivateUserId && state.chatType === "private" ? 'active' : ''}${isPinned ? ' pinned' : ''}"
-             data-user-id="${String(u.user_id)}"
-             data-openid="${safeOpenid}"
-             data-unionid="${safeUnionid}">
-          <div class="group-avatar user-avatar" ${avatarSrc}>${u.avatar ? '' : escHtml((u.nickname || String(u.user_id))[0])}</div>
-          <div class="group-item-info">
-            <div class="group-item-name-row"><div class="group-item-name">${escHtml(u.nickname || String(u.user_id))}</div>${blBadge}</div>
-            <div class="group-item-id">${escHtml(String(u.user_id))}</div>
-          </div>
-        </div>
-      `}).join("")
-    : '<div class="group-list-empty">暂无私聊</div>'
-
-  listEl.querySelectorAll(".group-list-item[data-user-id]").forEach(el => {
+  const slice = ordered.slice(start, end)
+  container.innerHTML = slice.map(u => privateChatItemHtml(u, pinSet)).join("")
+  container.querySelectorAll(".group-list-item[data-user-id]").forEach(el => {
     el.addEventListener("click", () => selectPrivateChat(el.dataset.userId))
     el.addEventListener("contextmenu", (e) => {
       e.preventDefault()
@@ -1142,6 +1248,61 @@ function renderPrivateChatList() {
       })
     }
   })
+  return container
+}
+
+function renderPrivateChatList(reset = true) {
+  const listEl = $("#groupListItems")
+  const searchTerm = ($("#groupSearch")?.value || "").toLowerCase()
+
+  const matchSearch = (u) =>
+    String(u.user_id).toLowerCase().includes(searchTerm) ||
+    (u.nickname || "").toLowerCase().includes(searchTerm)
+
+  const base = state.privateChats.filter(matchSearch)
+
+  // 置顶私聊优先展示（不管是否在活跃列表，只要置顶即可）
+  const pinSet = new Set(state.pinnedPrivate.map(String))
+  const pinnedItems = base.filter(u => pinSet.has(String(u.user_id)))
+  const normalItems = base.filter(u => !pinSet.has(String(u.user_id)))
+  const ordered = [...pinnedItems, ...normalItems]
+
+  if (reset) {
+    state.privateRendered = 0
+    // 移除哨兵，稍后按需重建
+    removePrivateSentinel()
+    listEl.innerHTML = ordered.length ? "" : '<div class="group-list-empty">暂无私聊</div>'
+  }
+
+  if (ordered.length === 0) return
+
+  // 仅渲染尚未渲染过的部分（追加，不重置滚动）
+  const start = state.privateRendered
+  if (start >= ordered.length) {
+    updatePrivateSentinel()
+    return
+  }
+
+  const tmp = document.createElement("div")
+  appendPrivateItems(ordered, start, ordered.length, tmp)
+  while (tmp.firstChild) listEl.appendChild(tmp.firstChild)
+
+  state.privateRendered = ordered.length
+
+  // 懒加载私聊头像（仅本次新增部分）
+  observeLazyAvatars(listEl)
+
+  // 根据是否还有更多页管理自动加载哨兵
+  updatePrivateSentinel()
+}
+
+// 维护“滚动到底自动加载”的哨兵：还有更多则确保哨兵存在，否则移除
+function updatePrivateSentinel() {
+  if (state.privateHasMore) {
+    ensurePrivateSentinel()
+  } else {
+    removePrivateSentinel()
+  }
 }
 
 async function selectPrivateChat(userId) {
@@ -2527,7 +2688,7 @@ function renderMessages(messages, position = "beforeend") {
     }
 
     div.innerHTML = `
-      <img class="msg-avatar" src="${avatarSrc}" alt="" onerror="this.style.display='none'">
+      <img class="msg-avatar" ${avatarSrc ? `data-lazy-src="${escHtml(avatarSrc)}"` : ""} alt="" onerror="this.style.display='none'">
       <div class="msg-body">
         <div class="msg-sender">${blUserBadge}${nickname}${roleBadge} <span class="msg-time-inline">${time}</span>${botMark}</div>
         ${bubbleRowHtml}
@@ -2564,6 +2725,9 @@ function renderMessages(messages, position = "beforeend") {
   } else {
     container.appendChild(fragment)
   }
+
+  // 懒加载消息头像
+  observeLazyAvatars(container)
 }
 
 // 重新渲染当前所有消息（用于拉黑/取消拉黑后即时更新标记）

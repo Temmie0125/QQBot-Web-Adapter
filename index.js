@@ -3176,7 +3176,9 @@ Bot.express.get(`${WEB_BASE}/api/bot/:selfId/private-chats`, async (req, res) =>
     const { selfId } = req.params
     if (!Bot[selfId]) return res.status(404).json({ error: "Bot 未找到" })
 
-    const users = []
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0)
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100)
+
     const flMap = Bot[selfId]?.fl
     const sep = Bot[selfId]?.adapter?.sep || ":"
     const flLookup = (uid) => {
@@ -3186,9 +3188,55 @@ Bot.express.get(`${WEB_BASE}/api/bot/:selfId/private-chats`, async (req, res) =>
       return info
     }
 
-    // 从活跃私聊用户列表获取（按最后活跃时间倒序）
+    // 构建单个用户的详情（昵称/头像/openid/unionid），按需调用，避免一次拉全量
+    const buildUser = async (uid) => {
+      try {
+        let nickname = null, avatar = "", openid = "", unionid = ""
+        if (config.storageBackend === "sqlite" && Bot.MessageDB) {
+          let row = await Bot.MessageDB.findOne({
+            where: { user_id: uid, message_type: 'private', me: 0 },
+            order: [['timestamp', 'DESC']],
+          })
+          if (!row) {
+            row = await Bot.MessageDB.findOne({
+              where: { user_id: uid, message_type: 'private' },
+              order: [['timestamp', 'DESC']],
+            })
+          }
+          if (row) {
+            const m = Bot.MessageDB.unpack(row)
+            nickname = m.nickname || null
+            avatar = m.avatar || ""
+            openid = m.openid || ""
+            unionid = m.unionid || ""
+          }
+        } else {
+          const msgKey = `wind-msg:private:${uid}`
+          const msgRaw = await redis.zRange(msgKey, -1, -1)
+          if (msgRaw && msgRaw.length > 0) {
+            try {
+              const msg = JSON.parse(msgRaw[0])
+              nickname = msg.nickname || null
+              avatar = msg.avatar || ""
+              openid = msg.openid || ""
+              unionid = msg.unionid || ""
+            } catch {}
+          }
+        }
+        const flInfo = flLookup(uid)
+        if (flInfo?.nickname) { nickname = flInfo.nickname; if (!avatar && flInfo.avatar) avatar = flInfo.avatar }
+        if (flInfo?.openid && !openid) openid = flInfo.openid
+        if (flInfo?.unionid && !unionid) unionid = flInfo.unionid
+        if (!nickname) nickname = uid
+        return { user_id: String(uid), nickname, avatar, openid, unionid }
+      } catch {
+        return { user_id: String(uid), nickname: uid, avatar: "", openid: "", unionid: "" }
+      }
+    }
+
+    // 完整的已排序 user_id 列表（按最后活跃时间倒序）
+    let userIds = []
     try {
-      let userIds = []
       if (config.storageBackend === "sqlite" && Bot.ActiveListDB) {
         userIds = await Bot.ActiveListDB.getList("active-private", selfId, 500)
       } else {
@@ -3196,61 +3244,30 @@ Bot.express.get(`${WEB_BASE}/api/bot/:selfId/private-chats`, async (req, res) =>
         const raw = await redis.zRange(activeKey, 0, -1)
         userIds = Array.isArray(raw) ? raw.reverse() : []
       }
+    } catch {}
 
-      // 批量获取每个用户的最新一条消息，拿到昵称和头像
-      for (const uid of userIds) {
-        try {
-          let nickname = null, avatar = "", openid = "", unionid = ""
-          // SQLite 路径
-          if (config.storageBackend === "sqlite" && Bot.MessageDB) {
-            // 优先取最新非 bot 消息（避免机器人消息污染用户头像/昵称）
-            let row = await Bot.MessageDB.findOne({
-              where: { user_id: uid, message_type: 'private', me: 0 },
-              order: [['timestamp', 'DESC']],
-            })
-            if (!row) {
-              // 回退到任意私聊消息
-              row = await Bot.MessageDB.findOne({
-                where: { user_id: uid, message_type: 'private' },
-                order: [['timestamp', 'DESC']],
-              })
-            }
-            if (row) {
-              const m = Bot.MessageDB.unpack(row)
-              nickname = m.nickname || null
-              avatar = m.avatar || ""
-              openid = m.openid || ""
-              unionid = m.unionid || ""
-            }
-          } else {
-            const msgKey = `wind-msg:private:${uid}`
-            const msgRaw = await redis.zRange(msgKey, -1, -1)
-            if (msgRaw && msgRaw.length > 0) {
-              try {
-                const msg = JSON.parse(msgRaw[0])
-                nickname = msg.nickname || null
-                avatar = msg.avatar || ""
-                openid = msg.openid || ""
-                unionid = msg.unionid || ""
-              } catch {}
-            }
-          }
-          // fl 优先
-          const flInfo = flLookup(uid)
-          if (flInfo?.nickname) { nickname = flInfo.nickname; if (!avatar && flInfo.avatar) avatar = flInfo.avatar }
-          if (flInfo?.openid && !openid) openid = flInfo.openid
-          if (flInfo?.unionid && !unionid) unionid = flInfo.unionid
-          if (!nickname) nickname = uid
-          users.push({ user_id: String(uid), nickname, avatar, openid, unionid })
-        } catch {
-          users.push({ user_id: String(uid), nickname: uid, avatar: "", openid: "", unionid: "" })
-        }
+    // 置顶私聊优先：把置顶的 user_id 提到列表最前面（去重）
+    try {
+      const pins = await getPins(String(selfId), "private")
+      const pinArr = Array.isArray(pins) ? pins.map(String) : []
+      if (pinArr.length) {
+        const pinSet = new Set(pinArr)
+        const rest = userIds.filter(id => !pinSet.has(String(id)))
+        userIds = [...pinArr.filter(id => userIds.some(x => String(x) === String(id))), ...rest]
       }
     } catch {}
 
-    // 注入黑名单状态
-    for (const u of users) u.is_blacklisted = isUserBlacklisted(u.user_id, u.unionid)
-    res.json(users)
+    const total = userIds.length
+    const pageIds = userIds.slice(offset, offset + limit)
+
+    const users = []
+    for (const uid of pageIds) {
+      const u = await buildUser(uid)
+      u.is_blacklisted = isUserBlacklisted(u.user_id, u.unionid)
+      users.push(u)
+    }
+
+    res.json({ users, total, offset, limit, hasMore: offset + limit < total })
   } catch (err) {
     logger.error("[QQBot-Web] 获取私聊列表失败:", err)
     res.status(500).json({ error: String(err) })
