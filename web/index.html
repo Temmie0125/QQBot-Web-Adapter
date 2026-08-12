@@ -361,6 +361,15 @@
                     <span class="reply-msgid-label">msg_id 回复</span>
                   </label>
                 </div>
+                <div class="md-btn-inline" id="mdBtnInline" style="display:none">
+                  <div class="md-btn-inline-head">
+                    <span class="md-btn-inline-title">MD 消息按钮</span>
+                    <button class="md-icon-btn" id="mdBtnClear" title="清空全部按钮">清空</button>
+                    <button class="md-icon-btn" id="mdBtnInlineClose" title="收起">✕</button>
+                  </div>
+                  <div class="md-btn-inline-tip">点格子添加/编辑按钮 · 长按按钮拖动可换位 · 悬停行首 ⠿ 拖动可换行</div>
+                  <div id="mdBtnGridHost"></div>
+                </div>
                 <div class="ark-form" id="arkForm" style="display:none">
                   <div class="ark-form-row">
                     <label>模板</label>
@@ -436,6 +445,9 @@
                   <button class="chat-clear-btn" id="chatInputClear" title="一键清空">一键清空</button>
                   <button class="emoji-trigger-btn" id="emojiTriggerNormal" title="插入表情包">
                     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="9" cy="9" r="7"/><circle cx="6.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="11.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><path d="M6.5 11c.8 1 4.2 1 5 0"/></svg>
+                  </button>
+                  <button class="chat-md-btn-btn" id="chatMdBtnBtn" title="构造 MD 消息按钮" style="display:none">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="13" height="11" rx="2"/><line x1="5.5" y1="7" x2="12.5" y2="7"/><line x1="5.5" y1="10" x2="9" y2="10"/><line x1="14" y1="2.5" x2="14" y2="15.5"/></svg>
                   </button>
                   <button class="chat-send-btn" id="chatSendBtn">
                     <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><path d="M2 2l14 7L2 16v-5.5L9 9 2 7.5V2z"/></svg>
@@ -1124,6 +1136,60 @@
   </div>
 
   <div class="ctx-menu" id="ctxMenu" style="display:none"></div>
+
+  <!-- MD 按钮编辑弹窗 -->
+  <div class="modal-overlay" id="mdBtnEditOverlay" style="display:none">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <h2 id="mdBtnEditTitle">添加按钮</h2>
+        <button class="modal-close" id="mdBtnEditClose">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>按钮类型</label>
+          <div class="type-tabs" id="mdBtnTypeTabs"></div>
+        </div>
+        <div class="field">
+          <label>显示文本 text（必填）</label>
+          <input id="mdB_text" placeholder="按钮上显示的文字" autocomplete="off">
+        </div>
+        <div class="field" id="mdB_type_field"><!-- 由类型动态填充 --></div>
+        <div class="field">
+          <label>样式 style（可选）</label>
+          <select id="mdB_style">
+            <option value="">默认</option>
+            <option value="1">1 - 蓝框蓝字</option>
+            <option value="2">2 - 灰框黑字</option>
+            <option value="3">3 - 灰框红字</option>
+            <option value="4">4 - 蓝底白字</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>点击后显示文本 clicked_text（可选）</label>
+          <input id="mdB_clicked" placeholder="点击按钮后显示的文本" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>权限 permission（可选）</label>
+          <input id="mdB_perm" placeholder="admin 或 用户ID，多个用逗号分隔" autocomplete="off">
+          <div class="hint">留空表示所有人可用；填 admin 仅管理员可操作；填 ID 数组则仅这些用户可用。</div>
+        </div>
+        <div class="field">
+          <label>弹窗（可选）：点击后二次确认</label>
+          <input id="mdB_content" placeholder="弹窗标题，如：是否确认操作？" autocomplete="off">
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input id="mdB_confirm" placeholder="确认文本，默认：是" autocomplete="off">
+            <input id="mdB_cancel" placeholder="取消文本，默认：否" autocomplete="off">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="mdBtnEditDel" style="margin-right:auto;display:none">删除此按钮</button>
+        <button class="btn" id="mdBtnEditCancel">取消</button>
+        <button class="btn btn-primary" id="mdBtnEditSave">确定</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

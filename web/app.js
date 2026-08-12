@@ -41,6 +41,7 @@ const state = {
   blacklist: { groups: [], openid: [], unionid: [] },
   oldestMsgIdx: null,
   messageType: "legacy",
+  mdButtons: [],    // MD 消息按钮：二元数组，元素为 replacebutton 按钮对象
   replyTo: null, // { msg_idx, text }
   replyMsgId: null, // { message_id, text } 选中的消息 message_id 用于回复
   useReplyMsgId: false, // 是否自动使用最近一条 message_id 回复（默认值在切换聊天时动态设置）
@@ -5512,6 +5513,11 @@ async function sendMessage() {
     }).filter(s => s.type === "text" ? s.text : true) }
 
     // 回复信息
+    // 发送前先同步当前展开的按钮构造区到 state.mdButtons（避免未收起直接发送丢失按钮）
+    if (msgType === "markdown" && mdBtnGridWrap && typeof mdBtnGridWrap._getButtons === "function"
+        && $("#mdBtnInline") && $("#mdBtnInline").style.display !== "none") {
+      state.mdButtons = mdBtnGridWrap._getButtons()
+    }
     if (state.replyTo) jsonPayload.reply_msg_idx = state.replyTo.msg_idx
     if (state.replyEventId) jsonPayload.reply_event_id = state.replyEventId.event_id
     else if (state.replyMsgId) jsonPayload.reply_msg_id = state.replyMsgId.message_id
@@ -5522,6 +5528,11 @@ async function sendMessage() {
         if (!m.me && m.message_id) { latestOther = m; break }
       }
       if (latestOther) jsonPayload.reply_msg_id = latestOther.message_id
+    }
+
+    // MD 消息按钮：作为 button 类型 segment 并入 segments 末尾（仅 MD 消息类型）
+    if (msgType === "markdown" && Array.isArray(state.mdButtons) && state.mdButtons.length) {
+      jsonPayload.segments.push({ type: "button", data: state.mdButtons })
     }
 
     if (blobs.length > 0) {
@@ -5578,6 +5589,7 @@ async function sendMessage() {
     state.replyTo = null
     state.replyMsgId = null
     state.replyEventId = null
+    state.mdButtons = []
     updateReplyPreview()
     updateMsgIdReplyPreview()
     updateEventIdReplyPreview()
@@ -5590,6 +5602,408 @@ async function sendMessage() {
     sendBtn.disabled = false
     editor.focus()
   }
+}
+
+// ===== MD 消息按钮构造（复用 replacebutton 风格的网格 + 编辑弹窗）=====
+const MD_MAX_ROWS = 5
+const MD_MAX_COLS = 10
+
+let mdBtnGridWrap = null   // 当前网格 wrap，含 _getButtons / _grid / _rerender
+let mdBtnCtx = null        // 按钮编辑上下文 { mode, row, col, btn }
+let mdBtnType = "input"
+let mdBtnDragCtx = null
+
+function mdToast(msg) {
+  let el = $("#mdBtnToast")
+  if (!el) {
+    el = document.createElement("div")
+    el.id = "mdBtnToast"
+    el.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);background:rgba(31,35,41,.88);color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;z-index:300;display:none;max-width:90%;text-align:center"
+    document.body.appendChild(el)
+  }
+  el.textContent = msg
+  el.style.display = "block"
+  clearTimeout(el._t)
+  el._t = setTimeout(() => { el.style.display = "none" }, 2200)
+}
+
+function mdOpenBuilder() {
+  renderMdBtnGrid()
+  $("#mdBtnInline").style.display = ""
+  $("#chatMdBtnBtn").classList.add("active")
+}
+
+function mdCloseBuilder(save) {
+  if (save && mdBtnGridWrap && typeof mdBtnGridWrap._getButtons === "function") {
+    state.mdButtons = mdBtnGridWrap._getButtons()
+  }
+  $("#mdBtnInline").style.display = "none"
+  $("#chatMdBtnBtn").classList.remove("active")
+}
+
+function mdHideInline() {
+  const el = $("#mdBtnInline")
+  if (el) el.style.display = "none"
+  const btn = $("#chatMdBtnBtn")
+  if (btn) btn.classList.remove("active")
+}
+
+function mdRenderBtnEditFields() {
+  const wrap = $("#mdB_type_field")
+  const t = MD_BTN_TYPES.find(x => x.id === mdBtnType)
+  wrap.innerHTML = ""
+  const lab = document.createElement("label")
+  lab.textContent = t.needLabel
+  const inp = document.createElement("input")
+  inp.id = "mdB_need"
+  const cur = mdBtnCtx?.btn
+  inp.value = cur ? (cur[t.need] || "") : ""
+  inp.placeholder = t.need === "link" ? "https://example.com" : "输入内容"
+  wrap.append(lab, inp)
+
+  if (t.id === "input" || t.id === "callback") {
+    wrap.appendChild(mdPillOption("mdB_reply", "引用消息（reply）：点击后引用该条消息", !!(cur && cur.reply)))
+  }
+  if (t.id === "input") {
+    wrap.appendChild(mdPillOption("mdB_send", "点击后自动发送（send）", !!(cur && cur.send)))
+  }
+}
+
+function mdPillOption(id, text, checked) {
+  const row = document.createElement("div")
+  row.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-top:12px"
+  const lab = document.createElement("label")
+  lab.textContent = text
+  lab.style.cssText = "font-size:13px;color:var(--text-secondary);cursor:pointer"
+  const sw = document.createElement("button")
+  sw.type = "button"
+  sw.className = "pill-switch" + (checked ? " on" : "")
+  sw.id = id
+  sw.title = text
+  const knob = document.createElement("span")
+  knob.className = "knob"
+  sw.appendChild(knob)
+  sw.onclick = () => sw.classList.toggle("on")
+  lab.onclick = () => sw.classList.toggle("on")
+  row.append(lab, sw)
+  return row
+}
+
+const MD_BTN_TYPES = [
+  { id: "input", name: "输入按钮", need: "input", needLabel: "输入框内容 input（点击后自动填入）" },
+  { id: "callback", name: "自动发送", need: "callback", needLabel: "发送内容 callback（点击后直接发送）" },
+  { id: "link", name: "链接按钮", need: "link", needLabel: "跳转链接 link（https://...）" },
+  { id: "toCallback", name: "回调按钮", need: "callback", needLabel: "回调数据 callback" },
+]
+
+function mdOpenBtnEdit(row, col, btn) {
+  mdBtnCtx = { mode: btn ? "edit" : "add", row, col, btn: btn || null }
+  $("#mdBtnEditTitle").textContent = btn ? "编辑按钮" : "添加按钮"
+  $("#mdBtnEditDel").style.display = btn ? "inline-flex" : "none"
+
+  const tabs = $("#mdBtnTypeTabs")
+  tabs.innerHTML = ""
+  let initType = "input"
+  if (btn) {
+    if (btn.link) initType = "link"
+    else if (btn.toCallback) initType = "toCallback"
+    else if (btn.reply) initType = btn.callback ? "callback" : "input"
+    else if (btn.callback) initType = "callback"
+    else if (btn.input) initType = "input"
+  }
+  mdBtnType = initType
+  MD_BTN_TYPES.forEach(t => {
+    const tab = document.createElement("div")
+    tab.className = "type-tab" + (t.id === mdBtnType ? " active" : "")
+    tab.textContent = t.name
+    tab.onclick = () => {
+      mdBtnType = t.id
+      mdRenderBtnEditFields()
+      ;[...tabs.children].forEach(c => c.classList.remove("active"))
+      tab.classList.add("active")
+    }
+    tabs.appendChild(tab)
+  })
+  mdRenderBtnEditFields()
+
+  $("#mdB_text").value = btn?.text || ""
+  $("#mdB_style").value = btn?.style != null ? String(btn.style) : ""
+  $("#mdB_clicked").value = btn?.clicked_text || ""
+  const perm = btn?.permission
+  $("#mdB_perm").value = Array.isArray(perm) ? perm.join(",") : (perm || "")
+  $("#mdB_content").value = btn?.content || ""
+  $("#mdB_confirm").value = btn?.confirm_text || ""
+  $("#mdB_cancel").value = btn?.cancel_text || ""
+
+  $("#mdBtnEditOverlay").style.display = "flex"
+}
+
+function mdSaveBtn() {
+  if (!mdBtnCtx) return
+  const text = $("#mdB_text").value.trim()
+  if (!text) { mdToast("显示文本 text 不能为空"); return }
+  const needVal = $("#mdB_need").value.trim()
+
+  const obj = { text }
+  if (needVal) obj[MD_BTN_TYPES.find(t => t.id === mdBtnType).need] = needVal
+  if (mdBtnType === "toCallback") obj.toCallback = true
+  if ((mdBtnType === "input" || mdBtnType === "callback") && $("#mdB_reply")?.classList.contains("on")) obj.reply = true
+  if (mdBtnType === "input" && $("#mdB_send")?.classList.contains("on")) obj.send = true
+
+  const style = $("#mdB_style").value
+  if (style) obj.style = Number(style)
+  const clicked = $("#mdB_clicked").value.trim()
+  if (clicked) obj.clicked_text = clicked
+
+  const permRaw = $("#mdB_perm").value.trim()
+  if (permRaw) {
+    if (permRaw === "admin") obj.permission = "admin"
+    else {
+      const ids = permRaw.split(",").map(s => s.trim()).filter(Boolean)
+      if (ids.length) obj.permission = ids.length === 1 && /^\d+$/.test(ids[0]) ? Number(ids[0]) : ids
+    }
+  }
+  const content = $("#mdB_content").value.trim()
+  if (content) {
+    obj.content = content
+    const cf = $("#mdB_confirm").value.trim()
+    if (cf) obj.confirm_text = cf
+    const cc = $("#mdB_cancel").value.trim()
+    if (cc) obj.cancel_text = cc
+  }
+
+  const grid = mdBtnGridWrap._grid
+  const { row, col } = mdBtnCtx
+  while (grid.length <= row) grid.push([])
+  while (grid[row].length <= col) grid[row].push(null)
+  grid[row][col] = obj
+  mdBtnGridWrap._rerender()
+  mdCloseBtnEdit()
+}
+
+function mdCloseBtnEdit() {
+  $("#mdBtnEditOverlay").style.display = "none"
+  mdBtnCtx = null
+}
+
+function mdDelBtnFromGrid() {
+  if (!mdBtnCtx || !mdBtnCtx.btn) return mdCloseBtnEdit()
+  const grid = mdBtnGridWrap._grid
+  if (grid[mdBtnCtx.row]) grid[mdBtnCtx.row][mdBtnCtx.col] = null
+  mdBtnGridWrap._rerender()
+  mdCloseBtnEdit()
+}
+
+function mdHandleRowDrop(srcRow, dstRow, grid) {
+  if (srcRow === dstRow) return
+  const row = grid.splice(srcRow, 1)[0]
+  grid.splice(dstRow, 0, row)
+  mdBtnGridWrap._rerender()
+}
+
+function mdHandleDrop(srcRow, srcCol, dstRow, dstCol, grid) {
+  if (srcRow === dstRow && srcCol === dstCol) return
+  const srcBtn = grid[srcRow]?.[srcCol]
+  if (!srcBtn) return
+  while (grid.length <= dstRow) grid.push([])
+  while (grid[dstRow].length <= dstCol) grid[dstRow].push(null)
+  const dstBtn = grid[dstRow][dstCol]
+  grid[srcRow][srcCol] = null
+  grid[dstRow][dstCol] = srcBtn
+  if (dstBtn) grid[srcRow][srcCol] = dstBtn
+  for (let i = grid.length - 1; i >= 0; i--) {
+    while (grid[i].length && grid[i][grid[i].length - 1] === null) grid[i].pop()
+    if (grid[i].length === 0) grid.splice(i, 1)
+  }
+  if (grid.length === 0) grid.push([null])
+  mdBtnGridWrap._rerender()
+}
+
+function renderMdBtnGrid() {
+  const host = $("#mdBtnGridHost")
+  host.innerHTML = ""
+  let grid = (Array.isArray(state.mdButtons) ? state.mdButtons : []).map(row => {
+    if (!Array.isArray(row)) return [null]
+    return row.length ? row.slice() : [null]
+  })
+  if (grid.length === 0) grid = [[null]]
+
+  const wrap = document.createElement("div")
+  wrap.className = "md-btn-grid-wrap"
+  const gridEl = document.createElement("div")
+  gridEl.className = "md-btn-grid"
+
+  const gridHead = document.createElement("div")
+  gridHead.className = "md-grid-head"
+  const limit = document.createElement("span")
+  limit.className = "limit"
+  gridHead.append(limit)
+
+  const bottom = document.createElement("div")
+  bottom.style.cssText = "margin-top:10px;display:flex;justify-content:center"
+  const addRowBtn = document.createElement("button")
+  addRowBtn.type = "button"
+  addRowBtn.className = "btn btn-sm"
+  addRowBtn.textContent = "+ 添加行"
+  addRowBtn.style.cssText = "width:100%;justify-content:center"
+  bottom.append(addRowBtn)
+
+  function renderGrid() {
+    gridEl.innerHTML = ""
+    grid.forEach((row, ri) => {
+      const rowEl = document.createElement("div")
+      rowEl.className = "md-grid-row"
+
+      const rowDrag = document.createElement("span")
+      rowDrag.className = "md-icon-btn md-row-drag"
+      rowDrag.textContent = "⠿"
+      rowDrag.title = "拖动换行"
+      rowDrag.draggable = true
+      rowDrag.addEventListener("dragstart", (e) => {
+        mdBtnDragCtx = { type: "row", row: ri }
+        rowEl.style.opacity = "0.4"
+        e.dataTransfer.effectAllowed = "move"
+        e.dataTransfer.setData("text/plain", "row")
+      })
+      rowDrag.addEventListener("dragend", () => {
+        rowEl.style.opacity = ""
+        gridEl.querySelectorAll(".drag-over-row").forEach(el => el.classList.remove("drag-over-row"))
+        mdBtnDragCtx = null
+      })
+      rowEl.appendChild(rowDrag)
+      rowEl.addEventListener("dragover", (e) => {
+        if (mdBtnDragCtx && mdBtnDragCtx.type === "row") { e.preventDefault(); rowEl.classList.add("drag-over-row") }
+      })
+      rowEl.addEventListener("dragleave", () => rowEl.classList.remove("drag-over-row"))
+      rowEl.addEventListener("drop", (e) => {
+        e.preventDefault()
+        rowEl.classList.remove("drag-over-row")
+        if (mdBtnDragCtx && mdBtnDragCtx.type === "row") mdHandleRowDrop(mdBtnDragCtx.row, ri, grid)
+      })
+
+      const cols = Math.max(row.length, 1)
+      for (let ci = 0; ci < cols; ci++) {
+        const btn = row[ci] || null
+        const cell = document.createElement("div")
+        cell.className = "md-cell " + (btn ? "filled" : "empty")
+        if (btn) {
+          const t = document.createElement("div")
+          t.className = "ctext"
+          t.textContent = btn.text || "(空文本)"
+          cell.appendChild(t)
+          if (btn.style) {
+            const s = document.createElement("span")
+            s.className = "cstyle"
+            s.textContent = "S" + btn.style
+            cell.appendChild(s)
+          }
+          const d = document.createElement("div")
+          d.className = "cell-del"
+          d.textContent = "×"
+          d.onclick = (e) => { e.stopPropagation(); row[ci] = null; renderGrid() }
+          cell.appendChild(d)
+
+          let pressTimer = null, isDrag = false, dragDone = false, startX = 0, startY = 0
+          const PRESS = 500
+          cell.addEventListener("contextmenu", (e) => e.preventDefault())
+          cell.addEventListener("pointerdown", (e) => {
+            if (e.pointerType === "mouse" && e.button !== 0) return
+            if (e.target.closest(".cell-del")) return
+            e.preventDefault()
+            startX = e.clientX; startY = e.clientY
+            isDrag = false; dragDone = false
+            cell.classList.add("long-pressing")
+            pressTimer = setTimeout(() => {
+              isDrag = true
+              cell.classList.remove("long-pressing")
+              cell.classList.add("dragging")
+              const f = document.createElement("div")
+              f.className = "btn-drag-floater"
+              f.innerHTML = (cell.querySelector(".ctext")?.outerHTML || "") + (cell.querySelector(".cstyle")?.outerHTML || "")
+              f.style.left = e.clientX + "px"; f.style.top = e.clientY + "px"
+              f.id = "__md_drag_floater"
+              document.body.appendChild(f)
+              cell.setPointerCapture(e.pointerId)
+            }, PRESS)
+          })
+          cell.addEventListener("pointermove", (e) => {
+            if (pressTimer) {
+              if (Math.abs(e.clientX - startX) > 8 || Math.abs(e.clientY - startY) > 8) { clearTimeout(pressTimer); pressTimer = null; cell.classList.remove("long-pressing") }
+              return
+            }
+            if (!isDrag) return
+            const f = document.getElementById("__md_drag_floater")
+            if (f) { f.style.left = e.clientX + "px"; f.style.top = e.clientY + "px" }
+            gridEl.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"))
+            const tgt = document.elementFromPoint(e.clientX, e.clientY)
+            if (tgt) { const tc = tgt.closest(".md-cell"); if (tc && tc !== cell && gridEl.contains(tc)) tc.classList.add("drag-over") }
+          })
+          const finishDrag = (e) => {
+            clearTimeout(pressTimer); pressTimer = null
+            cell.classList.remove("long-pressing")
+            if (!isDrag) return
+            isDrag = false; dragDone = true
+            cell.classList.remove("dragging")
+            const f = document.getElementById("__md_drag_floater"); if (f) f.remove()
+            gridEl.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"))
+            try { cell.releasePointerCapture(e.pointerId) } catch (_) {}
+            const tgt = e ? document.elementFromPoint(e.clientX, e.clientY) : null
+            if (tgt) {
+              const tc = tgt.closest(".md-cell")
+              if (tc && tc !== cell && gridEl.contains(tc)) {
+                const rows = Array.from(gridEl.querySelectorAll(".md-grid-row"))
+                const dstRow = rows.indexOf(tc.parentNode)
+                const dstCol = Array.from(tc.parentNode.querySelectorAll(".md-cell")).indexOf(tc)
+                if (dstRow >= 0 && dstCol >= 0) mdHandleDrop(ri, ci, dstRow, dstCol, grid)
+              }
+            }
+          }
+          cell.addEventListener("pointerup", finishDrag)
+          cell.addEventListener("pointercancel", finishDrag)
+          cell.onclick = () => { if (dragDone) { dragDone = false; return } mdOpenBtnEdit(ri, ci, btn) }
+        } else {
+          cell.textContent = "+"
+          cell.onclick = () => mdOpenBtnEdit(ri, ci, null)
+        }
+        rowEl.appendChild(cell)
+      }
+      const addCol = document.createElement("button")
+      addCol.type = "button"
+      addCol.className = "md-icon-btn add"
+      addCol.textContent = "+"
+      addCol.title = "在该行右侧添加按钮"
+      addCol.onclick = () => { if (row.length >= MD_MAX_COLS) { mdToast(`最多 ${MD_MAX_COLS} 列`); return } row.push(null); renderGrid() }
+      rowEl.appendChild(addCol)
+      const rd = document.createElement("button")
+      rd.type = "button"
+      rd.className = "md-icon-btn row-del"
+      rd.textContent = "✕"
+      rd.title = "删除该行"
+      rd.onclick = () => { grid.splice(ri, 1); if (grid.length === 0) grid.push([null]); renderGrid() }
+      rowEl.appendChild(rd)
+      gridEl.appendChild(rowEl)
+    })
+    addRowBtn.disabled = grid.length >= MD_MAX_ROWS
+    limit.textContent = `行 ${grid.length}/${MD_MAX_ROWS} · 单行列上限 ${MD_MAX_COLS}`
+  }
+
+  addRowBtn.onclick = () => { if (grid.length >= MD_MAX_ROWS) { mdToast(`最多 ${MD_MAX_ROWS} 行`); return } grid.push([null]); renderGrid() }
+
+  wrap._getButtons = () => {
+    const out = []
+    for (const row of grid) {
+      const r = row.filter(c => c != null)
+      if (r.length) out.push(r)
+    }
+    return out
+  }
+  wrap._grid = grid
+  wrap._rerender = renderGrid
+
+  wrap.append(gridHead, gridEl, bottom)
+  host.appendChild(wrap)
+  mdBtnGridWrap = wrap
+  renderGrid()
 }
 
 // Bot 发送消息后增量刷新（只追加新消息，无需清空 DOM 避免闪烁）
@@ -6703,6 +7117,7 @@ function setupEventListeners() {
       const clearBtn = $("#chatInputClear")
       const inlineClearBtn = $("#chatInputInlineClear")
       const emojiTriggerNormal = $("#emojiTriggerNormal")
+      const mdBtnBtn = $("#chatMdBtnBtn")
 
       if (btn.dataset.type === "media") {
         textInput.style.display = "none"
@@ -6715,6 +7130,8 @@ function setupEventListeners() {
         if (clearBtn) clearBtn.classList.remove("show")
         if (inlineClearBtn) inlineClearBtn.style.display = "none"
         if (emojiTriggerNormal) emojiTriggerNormal.style.display = "none"
+        if (mdBtnBtn) mdBtnBtn.style.display = "none"
+        mdHideInline()
       } else if (btn.dataset.type === "ark") {
         textInput.style.display = "none"
         if (textWrapper) textWrapper.style.display = "none"
@@ -6726,6 +7143,8 @@ function setupEventListeners() {
         if (clearBtn) clearBtn.classList.add("show")
         if (inlineClearBtn) inlineClearBtn.style.display = "none"
         if (emojiTriggerNormal) emojiTriggerNormal.style.display = "none"
+        if (mdBtnBtn) mdBtnBtn.style.display = "none"
+        mdHideInline()
         updateArkFields()
       } else {
         textInput.style.display = ""
@@ -6738,9 +7157,34 @@ function setupEventListeners() {
         if (clearBtn) clearBtn.classList.remove("show")
         if (inlineClearBtn) inlineClearBtn.style.display = ""
         if (emojiTriggerNormal) emojiTriggerNormal.style.display = ""
+        if (mdBtnBtn) mdBtnBtn.style.display = (btn.dataset.type === "markdown") ? "" : "none"
+        if (btn.dataset.type !== "markdown") mdHideInline()
       }
     })
   })
+
+  // MD 消息按钮构造入口（点击图标内联展开 / 收起构造区）
+  const mdBtnBtnEl = $("#chatMdBtnBtn")
+  if (mdBtnBtnEl) {
+    mdBtnBtnEl.addEventListener("click", () => {
+      if ($("#mdBtnInline").style.display === "none") mdOpenBuilder()
+      else mdCloseBuilder(true)
+    })
+  }
+  const mdBtnInlineClose = $("#mdBtnInlineClose")
+  if (mdBtnInlineClose) mdBtnInlineClose.onclick = () => mdCloseBuilder(true)
+  const mdBtnClear = $("#mdBtnClear")
+  if (mdBtnClear) mdBtnClear.onclick = () => { state.mdButtons = []; renderMdBtnGrid() }
+  const mdBtnEditClose = $("#mdBtnEditClose")
+  if (mdBtnEditClose) mdBtnEditClose.onclick = mdCloseBtnEdit
+  const mdBtnEditCancel = $("#mdBtnEditCancel")
+  if (mdBtnEditCancel) mdBtnEditCancel.onclick = mdCloseBtnEdit
+  const mdBtnEditSave = $("#mdBtnEditSave")
+  if (mdBtnEditSave) mdBtnEditSave.onclick = mdSaveBtn
+  const mdBtnEditDel = $("#mdBtnEditDel")
+  if (mdBtnEditDel) mdBtnEditDel.onclick = mdDelBtnFromGrid
+  const mdBtnEditOverlay = $("#mdBtnEditOverlay")
+  if (mdBtnEditOverlay) mdBtnEditOverlay.onclick = (e) => { if (e.target === mdBtnEditOverlay) mdCloseBtnEdit() }
 
   // 文件上传按钮（富媒体模式） → 触发 file input
   const uploadBtn = $("#chatUploadBtn")
