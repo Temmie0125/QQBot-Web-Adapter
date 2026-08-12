@@ -10,8 +10,6 @@ import { fileURLToPath, pathToFileURL } from 'url'
 import { createRequire } from "node:module"
 import express from "express"
 import { isGroupBlacklisted, isUserBlacklisted, blacklistGroup as blGroup, unblacklistGroup as unblGroup, blacklistUser as blUser, unblacklistUser as unblUser, getBlacklistData } from "../QQBot-Plugin/lib/blacklist.js"
-import { fetchGroupInfo } from "../QQBot-Plugin/lib/groupInfo.js"
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // 尝试加载 qrcode 包（QQBot-Plugin 已依赖）
@@ -46,10 +44,6 @@ const DEFAULT_CONFIG = {
   enableQuanliangCommands: true,
   httpLogSilent: false,
   publicAccess: true,
-  napcatEnabled: false,
-  napcatHost: "127.0.0.1",
-  napcatPort: 3000,
-  napcatToken: "",
 }
 
 let config = { ...DEFAULT_CONFIG }
@@ -85,9 +79,6 @@ async function loadConfig() {
       if (!Bot.express.quiet.includes(p)) Bot.express.quiet.push(p)
     }
   }
-
-  // Napcat 启用状态
-  Bot.napcatEnabled = config.napcatEnabled === true
 
   // 全量群 Map 初始化（仅首次插件加载时创建，后续重启不丢失 .quanliangMap 引用）
   if (!Bot.quanliangMap) {
@@ -913,6 +904,17 @@ function wsBroadcastPrivate(selfId, userId, data) {
   }
 }
 
+// 向指定 selfId 下所有客户端广播（用于群名等全局信息变更，不限于订阅的群）
+function wsBroadcastAll(selfId, data) {
+  for (const [conn, info] of wsClients) {
+    if (info.selfId === selfId) {
+      try {
+        conn.sendMsg(JSON.stringify(data))
+      } catch {}
+    }
+  }
+}
+
 Bot.wsf[WS_PATH] = [(conn, req) => {
   // WebSocket 鉴权：仅当登录开关开启时检查 session
   if (config.login?.enabled !== false) {
@@ -1358,6 +1360,13 @@ const _groupNameBacklog = new Map() // key: `${selfId}:${pureId}` -> { selfId, p
 let _groupNameConsumerRunning = false
 const _GROUP_NAME_INTERVAL = 3000 // 20 QPM：每个群之间间隔 3s 做速率限制
 
+// 是否处于 QQBot 沙箱模式：沙箱下 getGroupInfo 受限，不自动拉取群信息
+// 直接从已加载的 QQBot 适配器实例读取 config.bot.sandbox（无需读配置文件）
+function isSandboxMode() {
+  const adapter = Bot.adapter?.find(a => a.id === "QQBot")
+  return adapter?.config?.bot?.sandbox === true
+}
+
 async function _groupNameEnqueue(selfId, pureId) {
   const key = `${selfId}:${pureId}`
   if (_groupNameBacklog.has(key)) return
@@ -1369,6 +1378,7 @@ async function _groupNameEnqueue(selfId, pureId) {
 }
 
 async function _groupNameConsume() {
+  const sandbox = isSandboxMode()
   try {
     while (_groupNameBacklog.size) {
       const [key, item] = _groupNameBacklog.entries().next().value
@@ -1381,7 +1391,13 @@ async function _groupNameConsume() {
       let exist = glMap ? (await glMap.get(fullId)) || {} : {}
       try {
         // 读取同样用 fullId（对齐 QQBot-Plugin 的 setGroupMap / getGroupMap）
-        if (!exist?.group_name && !exist?.name) {
+        // 已退出群/非群成员(groupInvalid 群状态异常)的群跳过补取，避免反复请求
+        if (!exist?.group_name && !exist?.name && !exist?.kicked && !exist?.groupInvalid) {
+          // 沙箱模式：getGroupInfo 受限，跳过自动拉取（仅使用 gl 已有名称）
+          if (sandbox) {
+            await new Promise((r) => setTimeout(r, _GROUP_NAME_INTERVAL))
+            continue
+          }
           // 复用 QQBot-Plugin 官方 SDK 的 getGroupInfo（按 group_openid 获取）
           const sdk = Bot[selfId]?.sdk || Bot[selfId]
           if (sdk?.getGroupInfo) {
@@ -1393,6 +1409,8 @@ async function _groupNameConsume() {
               if (typeof glMap.set === "function") glMap.set(fullId, merged)
               else glMap[fullId] = merged
               logger.info(`[QQBot-Web] 群名补取成功 ${fullId} -> ${name}`)
+              // 推送群名更新，前端自动刷新显示
+              wsBroadcastAll(selfId, { type: "group_name_updated", groupId: fullId, group_name: name })
             }
           }
         }
@@ -1405,6 +1423,16 @@ async function _groupNameConsume() {
             if (typeof glMap.set === "function") glMap.set(fullId, merged)
             else glMap[fullId] = merged
             logger.info(`[QQBot-Web] 群 ${fullId} 已退出/非群成员，标记 kicked，停止补取`)
+          }
+        } else if (/1125[0-9]|invalid request/i.test(msg)) {
+          // invalid request（如 11255）：群状态异常（已解散 / 被封禁 / 类型不支持等），
+          // 服务端对该 OpenID 调 info 持续拒绝。在 gl 中标记 groupInvalid 持久化，
+          // 下次启动仍跳过补取，避免反复重试刷日志
+          if (glMap) {
+            const merged = { ...exist, group_id: fullId, group_openid: pureId, groupInvalid: true }
+            if (typeof glMap.set === "function") glMap.set(fullId, merged)
+            else glMap[fullId] = merged
+            logger.warn(`[QQBot-Web] 群 ${fullId} getGroupInfo 返回 invalid request（群状态异常，已标记 groupInvalid 永久停止补取）: ${msg}`)
           }
         } else {
           logger.warn(`[QQBot-Web] 群名补取 getGroupInfo(${pureId}) 失败: ${msg}`)
@@ -1426,6 +1454,7 @@ async function getGroupName(selfId, rawId) {
   const fullId = `${selfId}${sep}${pureId}`
   const info = await glMap.get(fullId) || await glMap.get(rawId)
   if (info?.kicked) return rawId // 已退出/非群成员，不再尝试补取
+  if (info?.groupInvalid) return rawId // 群状态异常（解散/封禁），不再尝试补取
   if (info?.group_name) return info.group_name
   if (info?.name) return info.name
   // gl 中暂无名称：先返回兜底 id 让前端立即显示，再异步补取
@@ -3096,7 +3125,7 @@ Bot.express.get(`${WEB_BASE}/api/bot/:selfId/group/:groupId/info`, async (req, r
     const recordedMemberNum = info?.group_member_num ?? info?.member_count ?? 0 // gl 中记录的人数
     if (!info?.kicked) {
       const sdk = Bot[selfId]?.sdk || Bot[selfId]
-      if (sdk?.getGroupInfo) {
+      if (sdk?.getGroupInfo && !isSandboxMode()) {
         try {
           const gi = await sdk.getGroupInfo(pureId)
           info = {
@@ -3109,21 +3138,35 @@ Bot.express.get(`${WEB_BASE}/api/bot/:selfId/group/:groupId/info`, async (req, r
           }
           // 写回 gl，对齐 setGroupMap 标准（key=fullId）
           if (glMap) {
-            const merged = { ...(await glMap.get(fullId) || {}), ...info, group_id: fullId }
+            const prev = (await glMap.get(fullId)) || {}
+            const merged = { ...prev, ...info, group_id: fullId }
+            if (typeof glMap.set === "function") glMap.set(fullId, merged)
+            else glMap[fullId] = merged
+            // 群名有变化则推送，前端自动刷新群列表显示
+            if (merged.group_name && merged.group_name !== prev.group_name) {
+              wsBroadcastAll(selfId, { type: "group_name_updated", groupId: fullId, group_name: merged.group_name })
+            }
+          }
+        } catch (err) {
+        const msg = String(err?.message || err || "")
+        if (/11293|非群成员|鉴权失败|kicked/.test(msg)) {
+          if (glMap) {
+            const merged = { ...(await glMap.get(fullId) || {}), group_id: fullId, group_openid: pureId, kicked: true }
             if (typeof glMap.set === "function") glMap.set(fullId, merged)
             else glMap[fullId] = merged
           }
-        } catch (err) {
-          const msg = String(err?.message || err || "")
-          if (/11293|非群成员|鉴权失败|kicked/.test(msg)) {
-            if (glMap) {
-              const merged = { ...(await glMap.get(fullId) || {}), group_id: fullId, group_openid: pureId, kicked: true }
-              if (typeof glMap.set === "function") glMap.set(fullId, merged)
-              else glMap[fullId] = merged
-            }
-            return res.status(404).json({ error: "机器人非群成员，无法获取群信息", kicked: true })
+          return res.status(404).json({ error: "机器人非群成员，无法获取群信息", kicked: true })
+        } else if (/1125[0-9]|invalid request/i.test(msg)) {
+          // 群状态异常（解散/封禁/类型不支持）：标记 groupInvalid 持久化，下次不再补取
+          if (glMap) {
+            const merged = { ...(await glMap.get(fullId) || {}), group_id: fullId, group_openid: pureId, groupInvalid: true }
+            if (typeof glMap.set === "function") glMap.set(fullId, merged)
+            else glMap[fullId] = merged
           }
-          logger.warn(`[QQBot-Web] 群详情 getGroupInfo(${pureId}) 失败: ${msg}`)
+          logger.warn(`[QQBot-Web] 群详情 getGroupInfo(${pureId}) 返回 invalid request（群状态异常，已标记 groupInvalid）: ${msg}`)
+          return res.status(410).json({ error: "该群状态异常（可能已解散/被封禁），无法获取群信息", groupInvalid: true })
+        }
+        logger.warn(`[QQBot-Web] 群详情 getGroupInfo(${pureId}) 失败: ${msg}`)
         }
       }
     }
@@ -3822,19 +3865,6 @@ Bot.express.post(`${WEB_BASE}/api/group-bind`, async (req, res) => {
 
     await redis.hSet('wind-group-bind', groupId, String(groupQQ))
 
-    // 异步拉取群信息并缓存
-    const napcatConfig = {
-      napcatHost: config.napcatHost || '127.0.0.1',
-      napcatPort: config.napcatPort || 3000,
-      napcatToken: config.napcatToken || '',
-    }
-    fetchGroupInfo(groupQQ, napcatConfig).then(info => {
-      if (info && Bot.groupInfoMap) {
-        Bot.groupInfoMap.set(String(groupQQ), info)
-        redis.set(`wind-group-info:${groupQQ}`, JSON.stringify(info))
-      }
-    }).catch(() => {})
-
     res.json({ success: true, groupQQ })
   } catch (err) {
     res.status(500).json({ error: String(err) })
@@ -3854,22 +3884,15 @@ Bot.express.delete(`${WEB_BASE}/api/group-bind`, async (req, res) => {
 
     await redis.hDel('wind-group-bind', groupId)
 
-    // 检查是否还有其他群绑定此QQ群号，无则清除缓存
-    const allBinds = await redis.hGetAll('wind-group-bind')
-    if (!Object.values(allBinds).includes(existingQQ)) {
-      Bot.groupInfoMap?.delete(existingQQ)
-      await redis.del(`wind-group-info:${existingQQ}`)
-    }
-
     res.json({ success: true, groupQQ: existingQQ })
   } catch (err) {
     res.status(500).json({ error: String(err) })
   }
 })
 
-// ========== 群信息缓存（由 QQBot-Plugin 通过 lib/groupInfo.js 初始化） ==========
+// ========== 群绑定信息（仅绑定 QQ 号，群名/人数均来自 gl） ==========
 
-// 获取全部群绑定信息（绑定 + 群信息）
+// 获取全部群绑定信息（绑定 QQ 号）
 Bot.express.get(`${WEB_BASE}/api/group-info/all`, async (req, res) => {
   try {
     const session = await getSession(req)
@@ -3877,32 +3900,18 @@ Bot.express.get(`${WEB_BASE}/api/group-info/all`, async (req, res) => {
     const binds = await redis.hGetAll('wind-group-bind')
     const result = {}
     for (const [gid, qq] of Object.entries(binds)) {
-      const info = Bot.groupInfoMap.get(qq)
-      result[gid] = { qq, group_name: info?.group_name || '', member_count: info?.member_count || 0 }
+      // 群名与人数统一从 gl 读取（getGroupInfo 已写入），不再单独缓存
+      const sep = ':'
+      const selfId = gid.includes(sep) ? gid.slice(0, gid.indexOf(sep)) : ''
+      const glMap = selfId ? Bot[selfId]?.gl : null
+      const info = glMap ? (await glMap.get(gid)) || {} : {}
+      result[gid] = {
+        qq,
+        group_name: info?.group_name || info?.name || '',
+        member_count: info?.group_member_num ?? info?.member_count ?? 0,
+      }
     }
     res.json(result)
-  } catch (err) {
-    res.status(500).json({ error: String(err) })
-  }
-})
-
-// 刷新单个群信息（绑定变更后调用）
-Bot.express.post(`${WEB_BASE}/api/group-info/refresh`, async (req, res) => {
-  try {
-    const session = await getSession(req)
-    if (!session && config.login?.enabled !== false) return res.status(401).json({ error: "未登录" })
-    const { groupQQ } = req.body || {}
-    if (!groupQQ) return res.status(400).json({ error: "缺少 groupQQ" })
-    const napcatConfig = {
-      napcatHost: config.napcatHost || '127.0.0.1',
-      napcatPort: config.napcatPort || 3000,
-      napcatToken: config.napcatToken || '',
-    }
-    const info = await fetchGroupInfo(groupQQ, napcatConfig)
-    if (!info) return res.status(404).json({ error: "无法获取群信息" })
-    Bot.groupInfoMap.set(String(groupQQ), info)
-    await redis.set(`wind-group-info:${groupQQ}`, JSON.stringify(info))
-    res.json(info)
   } catch (err) {
     res.status(500).json({ error: String(err) })
   }
@@ -4402,10 +4411,6 @@ Bot.express.get(`${WEB_BASE}/api/config`, async (req, res) => {
       storageBackend: config.storageBackend === "sqlite" ? "sqlite" : "redis",
       enableQuanliangCommands: config.enableQuanliangCommands !== false,
       httpLogSilent: !!config.httpLogSilent,
-      napcatEnabled: config.napcatEnabled === true,
-      napcatHost: config.napcatHost || "127.0.0.1",
-      napcatPort: config.napcatPort || 3000,
-      napcatToken: config.napcatToken ? "••••••••" : "",
     }
     res.json(safe)
   } catch (err) {
@@ -4470,7 +4475,7 @@ Bot.express.post(`${WEB_BASE}/api/config/save`, async (req, res) => {
     const session = await getSession(req)
     if (!session) return res.status(401).json({ error: "未登录" })
 
-    const { basePath, username, password, code, autoRecordMessage, autoDownloadImgorVideo, maxMediaCacheSize, saveTimes, storageBackend, loginEnabled, notifyUserId, publicAccess, enableQuanliangCommands, httpLogSilent, napcatEnabled, napcatHost, napcatPort, napcatToken } = req.body || {}
+    const { basePath, username, password, code, autoRecordMessage, autoDownloadImgorVideo, maxMediaCacheSize, saveTimes, storageBackend, loginEnabled, notifyUserId, publicAccess, enableQuanliangCommands, httpLogSilent } = req.body || {}
 
     // 检查今天是否已被封禁
     const blockKey = `wind-config-blocked:${session.username}`
@@ -4553,13 +4558,6 @@ Bot.express.post(`${WEB_BASE}/api/config/save`, async (req, res) => {
     if (notifyUserId !== undefined) config.notifyUserId = String(notifyUserId).trim()
     if (storageBackend !== undefined) config.storageBackend = storageBackend === "sqlite" ? "sqlite" : "redis"
     if (enableQuanliangCommands !== undefined) config.enableQuanliangCommands = !!enableQuanliangCommands
-    if (napcatEnabled !== undefined) config.napcatEnabled = !!napcatEnabled
-    if (napcatHost !== undefined) config.napcatHost = String(napcatHost).trim() || "127.0.0.1"
-    if (napcatPort !== undefined) {
-      const np = Number(napcatPort)
-      config.napcatPort = (Number.isFinite(np) && np >= 1 && np <= 65535) ? Math.floor(np) : 3000
-    }
-    if (napcatToken !== undefined) config.napcatToken = String(napcatToken).trim()
     if (httpLogSilent !== undefined) {
       config.httpLogSilent = !!httpLogSilent
       // 控制 Bot.express.quiet：静默 /basePath、/.well-known
@@ -4575,7 +4573,6 @@ Bot.express.post(`${WEB_BASE}/api/config/save`, async (req, res) => {
     if (publicAccess !== undefined) config.publicAccess = !!publicAccess
 
     // 同步到 Bot 全局
-    Bot.napcatEnabled = config.napcatEnabled === true
     Bot.autoRecordMessage = config.autoRecordMessage !== false
     Bot.autoDownloadImgorVideo = config.autoDownloadImgorVideo !== false
     Bot.saveTimes = [1, 2, 3, 4, 5, 6, 7].includes(config.saveTimes) ? config.saveTimes : 3
@@ -4659,17 +4656,10 @@ Bot.express.post(`${WEB_BASE}/api/config/save`, async (req, res) => {
           `全量群指令开关: ${config.enableQuanliangCommands ? "已启用" : "已关闭"}${mark(enableQuanliangCommands !== undefined)}`,
           `HTTP日志静默: ${config.httpLogSilent ? "已启用" : "已关闭"}${mark(httpLogSilent !== undefined)}`,
         ]
-        const napcat = [
-          `Napcat 启用: ${config.napcatEnabled ? "已启用" : "已关闭"}${mark(napcatEnabled !== undefined)}`,
-          `Napcat 地址: ${config.napcatHost || "127.0.0.1"}${mark(napcatHost !== undefined)}`,
-          `Napcat 端口: ${config.napcatPort || 3000}${mark(napcatPort !== undefined)}`,
-          `Napcat Token: ${napcatToken !== undefined && napcatToken !== "••••••••" ? "已变更 ✓ 已修改" : "未变更"}`,
-        ]
         if (base.some(Boolean)) parts.push("【基础设置】\n" + base.join("\n"))
         if (storage.some(Boolean)) parts.push("【消息存储设置】\n" + storage.join("\n"))
         if (security.some(Boolean)) parts.push("【通知与安全】\n" + security.join("\n"))
         if (other.some(Boolean)) parts.push("【其他设置】\n" + other.join("\n"))
-        if (napcat.some(Boolean)) parts.push("【Napcat 连接设置】\n" + napcat.join("\n"))
         const changeDesc = parts.length > 0 ? parts.join("\n\n") : "配置已更新"
         const opIp = getClientIp(req)
         const opRegion = await getIpRegion(opIp)
@@ -4830,10 +4820,9 @@ Bot.express.get(`${WEB_BASE}/api/bot/:selfId/blacklist`, async (req, res) => {
       // 优先使用群备注，其次绑定群的 QQ 群名，然后 gl 中的名称，最后回退到 group_id
       const note = groupNotes[gid] || ""
       const boundQQ = groupBinds[gid]
-      const boundInfo = boundQQ ? Bot.groupInfoMap?.get(boundQQ) : null
       groups.push({
         group_id: gid,
-        group_name: note || boundInfo?.group_name || info.group_name || info.name || gid,
+        group_name: note || info.group_name || info.name || gid,
         bound_qq: boundQQ || "",
       })
     }

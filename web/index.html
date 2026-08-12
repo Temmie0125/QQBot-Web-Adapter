@@ -572,37 +572,6 @@
               </label>
             </div>
 
-            <!-- Napcat 连接设置 -->
-            <div class="settings-section">Napcat 连接设置</div>
-            <div class="settings-group">
-              <label class="settings-label">启用 Napcat HTTP 获取群信息<span class="settings-help" data-tip="开启后通过 Napcat HTTP 服务器获取绑定群的名称、成员数等信息。需先部署 Napcat 并正确配置地址、端口和 Token。关闭后将仅通过本机中的野鸡实例获取群信息，并隐藏下方 Napcat 设置项">?</span></label>
-              <label class="settings-switch">
-                <input type="checkbox" id="setNapcatEnabled">
-                <span class="settings-switch-slider"></span>
-              </label>
-            </div>
-            <div id="napcatSettings" style="display:none">
-            <div class="settings-group">
-              <label class="settings-label">Napcat 地址</label>
-              <input type="text" class="settings-input" id="setNapcatHost" placeholder="127.0.0.1">
-            </div>
-            <div class="settings-group">
-              <label class="settings-label">Napcat 端口</label>
-              <input type="number" class="settings-input" id="setNapcatPort" placeholder="3000" min="1" max="65535">
-            </div>
-            <div class="settings-group">
-              <label class="settings-label">Napcat Token</label>
-              <input type="password" class="settings-input" id="setNapcatToken" placeholder="输入 Token">
-            </div>
-            </div>
-
-            <!-- 群信息刷新 -->
-            <div class="settings-section">群信息管理</div>
-            <div class="settings-group">
-              <label class="settings-label">刷新全部绑定群信息<span class="settings-help" data-tip="重新从 QQ/Napcat 获取所有已绑定群的群名称、成员数等信息并更新缓存">?</span></label>
-              <button class="refresh-all-btn" id="refreshAllGroupInfoBtn">一键刷新全部</button>
-            </div>
-
             <div class="settings-actions">
               <button class="settings-save-btn" id="settingsSaveBtn" disabled>保存配置</button>
               <span class="settings-saved-hint" id="settingsSavedHint"></span>
@@ -717,6 +686,11 @@
     <div class="context-menu-item" data-action="userInfo">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="5" r="3"/><path d="M2 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/><rect x="5" y="0" width="4" height="2" rx="1"/></svg>
       用户信息
+    </div>
+    <div class="context-menu-divider" data-divider="emoji" style="display:none"></div>
+    <div class="context-menu-item" data-action="add-emoji" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="7" r="6"/><circle cx="4.8" cy="5.5" r="1" fill="#fff"/><circle cx="9.2" cy="5.5" r="1" fill="#fff"/><path d="M4.5 9.2c.8.9 1.7 1.3 2.5 1.3s1.7-.4 2.5-1.3" stroke="#fff" stroke-width="1" fill="none"/></svg>
+      添加表情
     </div>
     <div class="context-menu-divider" data-divider="mute" style="display:none"></div>
     <div class="context-menu-item warn" data-action="mute" style="display:none">
@@ -947,6 +921,28 @@
       </div>
     </div>
   </div>
+
+  <!-- 消息图片 添加表情 弹窗 -->
+  <div class="modal-overlay" id="emojiAddModal" style="display:none">
+    <div class="modal-content emoji-add-content">
+      <div class="modal-header">
+        <span>添加表情到列表</span>
+        <button class="modal-close" id="emojiAddClose">✕</button>
+      </div>
+      <div class="emoji-add-preview">
+        <img id="emojiAddPreviewImg" src="" alt="" onerror="this.style.display='none'">
+      </div>
+      <div class="emoji-add-body">
+        <div class="emoji-add-hint">选择要添加到的表情列表（可多选）</div>
+        <div class="emoji-add-list" id="emojiAddList"></div>
+      </div>
+      <div class="emoji-add-footer">
+        <button class="emoji-add-cancel" id="emojiAddCancel">取消</button>
+        <button class="emoji-add-confirm note-modal-save" id="emojiAddConfirm">确定</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="userInfoModal" style="display:none">
     <div class="modal-content user-info-content">
       <div class="modal-header">
@@ -1006,9 +1002,9 @@
             </div>
           </div>
         </div>
-        <div class="user-info-actions" id="userInfoActions" style="display:none">
-          <button class="user-info-bl-btn" id="userInfoBlBtn">拉黑此用户</button>
-          <button class="user-info-unbl-btn" id="userInfoUnblBtn" style="display:none;color:#4caf50">取消拉黑此用户</button>
+        <div class="user-info-actions group-info-actions" id="userInfoActions" style="display:none">
+          <button class="group-info-bl-btn" id="userInfoBlBtn">拉黑此用户</button>
+          <button class="group-info-bl-btn unbl" id="userInfoUnblBtn" style="display:none">取消拉黑此用户</button>
         </div>
       </div>
     </div>
@@ -1059,6 +1055,9 @@
               <button class="user-info-copy-btn" data-copy="avatar_url" title="复制">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="3" y="3" width="8" height="9" rx="1"/><path d="M1 1h7v2M1 1v9a1 1 0 001 1h1"/></svg>
               </button>
+              <button class="user-info-copy-btn user-info-jump-btn" id="groupInfoJumpAvatar" title="在浏览器中打开头像" style="display:none">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M10 1h3v3M13 1L7 7M3 2H2a1 1 0 00-1 1v9a1 1 0 001 1h9a1 1 0 001-1v-1"/></svg>
+              </button>
             </div>
           </div>
           <div class="user-info-field">
@@ -1088,6 +1087,10 @@
               </button>
             </div>
           </div>
+        </div>
+        <div class="user-info-actions group-info-actions">
+          <button class="group-info-bl-btn" id="groupInfoBlBtn">拉黑此群</button>
+          <button class="group-info-refresh-btn" id="groupInfoRefreshBtn">刷新群信息</button>
         </div>
       </div>
     </div>

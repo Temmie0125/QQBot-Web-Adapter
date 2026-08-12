@@ -2650,6 +2650,39 @@ function getNoticeText(m) {
   }
 }
 
+// 从消息中提取第一张图片的可用 URL（用于「添加表情」）
+// 解析 segment 中的媒体字段为可用 URL（与 renderMessageContent 内部的 getMediaUrl 逻辑一致）
+function resolveMediaUrl(field, seg) {
+  if (!field) return null
+  if (typeof field === "string") {
+    if (seg && seg._local) {
+      return `${API_BASE}/bot/${state.currentBotId || ""}/local-media?path=${encodeURIComponent(field)}`
+    }
+    return field
+  }
+  if (field.type === "Buffer" && Array.isArray(field.data)) {
+    const bytes = new Uint8Array(field.data)
+    return URL.createObjectURL(new Blob([bytes]))
+  }
+  return null
+}
+
+function getMessageImageUrl(m) {
+  if (!m) return ""
+  // 从 segment 取 image 类型（兜底：右键未直接命中图片元素时使用）
+  const segs = Array.isArray(m.message) ? m.message : (Array.isArray(m.message?.[0]) ? m.message[0] : [])
+  const flat = Array.isArray(segs) && segs.length && Array.isArray(segs[0]) ? segs.flat() : segs
+  if (Array.isArray(flat)) {
+    for (const seg of flat) {
+      if (seg && seg.type === "image") {
+        const url = resolveMediaUrl(seg.file, seg) || resolveMediaUrl(seg.data, seg) || seg.url || ""
+        if (url) return url
+      }
+    }
+  }
+  return ""
+}
+
 function renderMessages(messages, position = "beforeend") {
   const container = $("#chatMessages")
 
@@ -3042,6 +3075,7 @@ function scrollToBottom() {
 
 // ===== 上下文菜单 =====
 let contextMessage = null
+let contextImageUrl = "" // 右键/长按命中的图片 URL（多图消息时取具体那张）
 
 function showContextMenu(e, message) {
   contextMessage = message
@@ -3114,6 +3148,26 @@ function showContextMenu(e, message) {
     unmuteItem.style.display = "none"
   }
 
+  // 添加表情菜单项：仅当消息含图片（且非通知）时显示
+  const emojiDivider = menu.querySelector('[data-divider="emoji"]')
+  const emojiItem = menu.querySelector('[data-action="add-emoji"]')
+  // 优先取右键/长按直接命中的图片元素 src，回退到消息 segment 扫描
+  let imgUrl = ""
+  if (!isNotice) {
+    const t = e?.target
+    if (t && (t.tagName === "IMG" || t.tagName === "VIDEO") && t.src) imgUrl = t.src
+    if (!imgUrl) imgUrl = getMessageImageUrl(message)
+  }
+  if (!isNotice && imgUrl) {
+    contextImageUrl = imgUrl
+    if (emojiDivider) emojiDivider.style.display = ""
+    if (emojiItem) emojiItem.style.display = ""
+  } else {
+    contextImageUrl = ""
+    if (emojiDivider) emojiDivider.style.display = "none"
+    if (emojiItem) emojiItem.style.display = "none"
+  }
+
   menu.style.display = "block"
   // 先放到视野外获取真实尺寸
   menu.style.left = "-9999px"
@@ -3155,7 +3209,7 @@ function showGroupContextMenu(e, groupId) {
   $("#ctxUnblGroup").style.display = isBlacklisted ? "" : "none"
   $("#ctxBindGroup").style.display = isBound ? "none" : ""
   $("#ctxUnbindGroup").style.display = isBound ? "" : "none"
-  $("#ctxRefreshGroupInfo").style.display = isBound ? "" : "none"
+  $("#ctxRefreshGroupInfo").style.display = ""
   $("#ctxPinGroup").innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M9 2l3 3-1 1-1-1-2 2v5l-2 1 1-2 3-3-1-1 2-2z"/></svg>' + (isGroupPinned(groupId) ? "取消置顶" : "置顶")
 
   const menu = $("#groupContextMenu")
@@ -3407,6 +3461,7 @@ async function unblacklistGroupFromWeb(groupId) {
 
 // ===== 群备注弹窗 =====
 let noteModalGroupId = null
+let currentGroupInfoId = null
 
 function showGroupNoteModal(groupId) {
   noteModalGroupId = groupId
@@ -3572,50 +3627,20 @@ async function unbindGroupQQ(groupId) {
 
 // 刷新单个绑定群信息
 async function refreshSingleGroupInfo(groupId) {
-  const qq = state.groupBindings[groupId]
-  if (!qq) { showToast("该群未绑定QQ群号"); return }
   try {
-    const info = await api("/group-info/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ groupQQ: qq }),
-    })
-    state.boundGroupInfos[qq] = info
-    renderGroupList()
-    showToast(`已刷新群信息：${info.group_name || qq}`)
-  } catch (err) {
-    showToast("刷新失败: " + (err.message || ""))
-  }
-}
-
-// 一键刷新全部绑定群信息
-async function refreshAllGroupInfo() {
-  const btn = $("#refreshAllGroupInfoBtn")
-  if (!btn) return
-  btn.disabled = true
-  btn.textContent = "刷新中..."
-  try {
-    // 依次刷新所有已绑定的群
-    const binds = state.groupBindings
-    let done = 0
-    for (const [, qq] of Object.entries(binds)) {
-      try {
-        const info = await api("/group-info/refresh", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ groupQQ: qq }),
-        })
-        state.boundGroupInfos[qq] = info
-        done++
-      } catch { /* 单个失败不影响整体 */ }
+    // 通过官方 getGroupInfo 接口（/bot/:selfId/group/:groupId/info）刷新，无需第三方机器人
+    const info = await api(`/bot/${state.currentBotId}/group/${encodeURIComponent(groupId)}/info`)
+    // 接口已将群名/信息写回 gl，直接刷新列表即可
+    if (info?.group_name) {
+      const g = state.groups.find(x => x.group_id === groupId)
+      if (g) g.group_name = info.group_name
     }
     renderGroupList()
-    showToast(`已刷新 ${done}/${Object.keys(binds).length} 个绑定群信息`)
+    showToast(`已刷新群信息：${info?.group_name || groupId}`)
   } catch (err) {
-    showToast("刷新失败: " + (err.message || ""))
-  } finally {
-    btn.disabled = false
-    btn.textContent = "一键刷新全部"
+    if (err?.kicked) showToast("刷新失败：机器人非群成员")
+    else if (err?.groupInvalid) showToast("刷新失败：该群状态异常（可能已解散/被封禁）")
+    else showToast("刷新失败: " + (err.message || ""))
   }
 }
 
@@ -3951,6 +3976,165 @@ async function handleContextAction(action) {
       }
       break
     }
+    case "add-emoji": {
+      // 优先使用右键/长按直接命中的具体图片（多图消息时即所选那张），回退扫描消息 segment
+      const url = contextImageUrl || getMessageImageUrl(contextMessage)
+      if (url) openEmojiAddModal(url)
+      else showToast("未找到可添加的的图片")
+      break
+    }
+  }
+}
+
+// ===== 消息图片「添加表情」弹窗 =====
+const emojiAddState = {
+  imageUrl: "",
+  selected: new Set(), // 已勾选要添加的列表 folder
+  loading: false,
+}
+
+async function openEmojiAddModal(imageUrl) {
+  emojiAddState.imageUrl = imageUrl || ""
+  emojiAddState.selected = new Set()
+  emojiAddState.loading = false
+  const modal = $("#emojiAddModal")
+  const preview = $("#emojiAddPreviewImg")
+  if (preview) preview.src = emojiAddState.imageUrl
+  modal.style.display = "flex"
+  try {
+    const data = await api("/emoji/lists")
+    const lists = Array.isArray(data.lists) ? data.lists : []
+    renderEmojiAddList(lists)
+  } catch (e) {
+    console.error("[emojiAdd] 列表加载失败:", e)
+    showToast("表情列表加载失败")
+  }
+}
+
+function closeEmojiAddModal() {
+  $("#emojiAddModal").style.display = "none"
+  emojiAddState.imageUrl = ""
+  emojiAddState.selected = new Set()
+}
+
+function renderEmojiAddList(lists) {
+  const wrap = $("#emojiAddList")
+  if (!lists.length) {
+    wrap.innerHTML = '<div class="emoji-add-empty">暂无表情列表，请先在表情包中新建</div>'
+    return
+  }
+  wrap.innerHTML = lists.map(l => {
+    const iconHtml = l.icon
+      ? (l.icon.includes(".") ? `<img src="${emojiStaticUrl("icon", l.icon)}" alt="">` : l.icon)
+      : `<span class="emoji-default-icon">📁</span>`
+    return `
+      <div class="emoji-add-item" data-folder="${escHtml(l.folder)}">
+        <div class="emoji-add-item-icon">${iconHtml}</div>
+        <div class="emoji-add-item-title">${escHtml(l.title)}</div>
+        <button class="emoji-add-toggle" data-folder="${escHtml(l.folder)}">添加</button>
+      </div>
+    `
+  }).join("")
+
+  wrap.querySelectorAll(".emoji-add-item").forEach(el => {
+    const folder = el.dataset.folder
+    const btn = el.querySelector(".emoji-add-toggle")
+    if (emojiAddState.selected.has(folder)) {
+      el.classList.add("selected")
+      btn.textContent = "取消"
+      btn.classList.add("added")
+    }
+    btn.addEventListener("click", () => {
+      if (emojiAddState.selected.has(folder)) {
+        emojiAddState.selected.delete(folder)
+        el.classList.remove("selected")
+        btn.textContent = "添加"
+        btn.classList.remove("added")
+      } else {
+        emojiAddState.selected.add(folder)
+        el.classList.add("selected")
+        btn.textContent = "取消"
+        btn.classList.add("added")
+      }
+    })
+  })
+}
+
+// 在浏览器侧获取图片 Blob：优先带凭据 fetch（同源/local-media 可过登录态），
+// 跨域被 CORS 拦截时回退到 canvas 绘制（图片已在页面中渲染，同源或带 crossOrigin 时可绘制）
+async function fetchImageBlob(url) {
+  // 1) 同源/带登录态的图片：带 cookie 直接 fetch
+  try {
+    const resp = await fetch(url, { credentials: "include", mode: "cors" })
+    if (resp.ok && (resp.headers.get("content-type") || "").startsWith("image/")) {
+      return await resp.blob()
+    }
+  } catch { /* 跨域 CORS 拦截，走回退 */ }
+  // 2) canvas 绘制回退（处理跨域图片）
+  return await new Promise((resolve, reject) => {
+    const img = new Image()
+    // 跨域图片尝试以匿名模式加载，若服务器允许 CORS 则可绘制
+    img.crossOrigin = "anonymous"
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas")
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        canvas.getContext("2d").drawImage(img, 0, 0)
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob)
+          else reject(new Error("图片转换失败"))
+        }, "image/png")
+      } catch (e) {
+        reject(e)
+      }
+    }
+    img.onerror = () => reject(new Error("图片加载失败"))
+    img.src = url
+  })
+}
+
+function emojiExtFromUrl(url) {
+  const m = /\.(png|jpe?g|gif|webp|bmp)(?:[?#]|$)/i.exec(url || "")
+  return m ? m[1].toLowerCase().replace("jpg", "jpeg") : "png"
+}
+
+async function confirmEmojiAdd() {
+  const folders = [...emojiAddState.selected]
+  if (!folders.length) {
+    showToast("请先选择要添加的列表")
+    return
+  }
+  if (!emojiAddState.imageUrl) {
+    showToast("图片地址缺失")
+    return
+  }
+  emojiAddState.loading = true
+  const confirmBtn = $("#emojiAddConfirm")
+  if (confirmBtn) confirmBtn.disabled = true
+  try {
+    // 浏览器侧取得图片二进制（带登录态，避免服务端二次抓取被 401）
+    const blob = await fetchImageBlob(emojiAddState.imageUrl)
+    const ext = emojiExtFromUrl(emojiAddState.imageUrl)
+    const file = new File([blob], `msg_image.${ext}`, { type: blob.type || `image/${ext}` })
+    let okCount = 0
+    for (const folder of folders) {
+      try {
+        const fd = new FormData()
+        fd.append("files", file, file.name)
+        const data = await api(`/emoji/lists/${encodeURIComponent(folder)}/emojis`, { method: "POST", body: fd })
+        if ((data.added && data.added.length) || data.skipped) okCount++
+      } catch (e) {
+        console.error(`[emojiAdd] 添加到 ${folder} 失败:`, e)
+      }
+    }
+    showToast(okCount > 0 ? `已添加到 ${okCount} 个表情列表` : "添加失败")
+    closeEmojiAddModal()
+  } catch (e) {
+    showToast("图片获取失败: " + (e.message || e))
+  } finally {
+    emojiAddState.loading = false
+    if (confirmBtn) confirmBtn.disabled = false
   }
 }
 
@@ -4333,9 +4517,17 @@ function closeUserInfoModal() {
 async function showGroupInfoModal(groupId) {
   const modal = $("#groupInfoModal")
   if (!modal) return
+  currentGroupInfoId = groupId
   const pureId = getPureGroupId(groupId)
   // 先填充兜底 openid，避免空白
   $("#groupInfoOpenId").textContent = pureId
+  // 拉黑按钮：根据当前拉黑状态初始化文案
+  const blBtn = $("#groupInfoBlBtn")
+  const isBl = !!(state.groups.find(g => g.group_id === groupId)?.is_blacklisted)
+  if (blBtn) {
+    blBtn.textContent = isBl ? "取消拉黑此群" : "拉黑此群"
+    blBtn.classList.toggle("unbl", isBl)
+  }
   $("#groupInfoName").textContent = "加载中…"
   $("#groupInfoTags").innerHTML = ""
   $("#groupInfoMemberNum").textContent = "-"
@@ -4363,6 +4555,9 @@ async function showGroupInfoModal(groupId) {
       avatarUrlEl.textContent = avatarUrl
       avatarUrlEl.href = avatarUrl
       $("#groupInfoAvatarField").style.display = "block"
+      // 跳转按钮：有链接才显示（与用户信息弹窗一致）
+      const jumpBtn = $("#groupInfoJumpAvatar")
+      if (jumpBtn) jumpBtn.style.display = ""
     } else {
       avatarEl.style.display = "none"
       fallbackEl.style.display = "flex"
@@ -4401,6 +4596,22 @@ async function showGroupInfoModal(groupId) {
 function closeGroupInfoModal() {
   const modal = $("#groupInfoModal")
   if (modal) modal.style.display = "none"
+}
+
+// 刷新群信息：重新调用 /group/:groupId/info（getGroupInfo）并填充弹窗
+async function refreshGroupInfo(groupId) {
+  if (!groupId) return
+  const btn = $("#groupInfoRefreshBtn")
+  if (btn) { btn.disabled = true; btn.textContent = "刷新中…" }
+  try {
+    await showGroupInfoModal(groupId)
+    showToast("群信息已刷新")
+  } catch (e) {
+    console.error("刷新群信息失败:", e)
+    showToast("刷新失败: " + (e.message || e))
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "刷新群信息" }
+  }
 }
 
 // ===== rawMsg 展示：过滤 buffer/base64 数据，防止卡顿 =====
@@ -5558,8 +5769,32 @@ function connectWebSocket() {
   }
 }
 
+// 群名更新（来自后端 getGroupInfo 补取/刷新）：更新本地 state 并刷新显示
+function handleGroupNameUpdated(groupId, groupName) {
+  if (!groupId || !groupName) return
+  // 更新群列表数据
+  const g = state.groups.find(x => x.group_id === groupId)
+  if (g) g.group_name = groupName
+  // 若当前打开的正是该群，同步聊天头部
+  if (state.currentGroup && state.currentGroup.group_id === groupId) {
+    state.currentGroup.group_name = groupName
+    const nameEl = $("#chatHeaderName")
+    if (nameEl) {
+      const note = state.groupNotes[groupId] || ""
+      nameEl.textContent = note || groupName
+    }
+  }
+  // 刷新侧边栏群列表（含搜索过滤/置顶顺序不变）
+  renderGroupList()
+}
+
 function handleWsMessage(data) {
   if (!data) return
+  // 群名自动补取/刷新成功后，后端推送更新：立即刷新 Web 显示（不限于当前会话）
+  if (data.type === "group_name_updated") {
+    handleGroupNameUpdated(data.groupId, data.group_name)
+    return
+  }
   // 根据 chatType 和消息类型判断是否属于当前会话
   const currentChatId = state.chatType === "group" ? state.currentGroupId : state.currentPrivateUserId
   const msgChatId = data.groupId || data.privateUserId
@@ -7026,6 +7261,14 @@ function setupEventListeners() {
     if (e.target === e.currentTarget) closeMuteDialog()
   })
 
+  // 添加表情弹窗
+  $("#emojiAddClose").addEventListener("click", closeEmojiAddModal)
+  $("#emojiAddCancel").addEventListener("click", closeEmojiAddModal)
+  $("#emojiAddConfirm").addEventListener("click", confirmEmojiAdd)
+  $("#emojiAddModal").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeEmojiAddModal()
+  })
+
   // 用户信息弹窗
   $("#userInfoModalClose").addEventListener("click", () => {
     if (isMobile() && $("#userInfoModal").style.display === "flex") history.back()
@@ -7088,6 +7331,28 @@ function setupEventListeners() {
       if (isMobile()) history.back()
       else closeGroupInfoModal()
     }
+  })
+  // 群信息弹窗：拉黑 / 取消拉黑
+  $("#groupInfoBlBtn").addEventListener("click", async () => {
+    const gid = currentGroupInfoId
+    if (!gid) return
+    const isBl = !!(state.groups.find(g => g.group_id === gid)?.is_blacklisted)
+    try {
+      if (isBl) await unblacklistGroupFromWeb(gid)
+      else await blacklistGroupFromWeb(gid)
+      const nowBl = !!(state.groups.find(g => g.group_id === gid)?.is_blacklisted)
+      const btn = $("#groupInfoBlBtn")
+      if (btn) {
+        btn.textContent = nowBl ? "取消拉黑此群" : "拉黑此群"
+        btn.classList.toggle("unbl", nowBl)
+      }
+    } catch (e) {
+      console.error("群拉黑操作失败:", e)
+    }
+  })
+  // 群信息弹窗：刷新群信息（立即从 getGroupInfo 重新获取）
+  $("#groupInfoRefreshBtn").addEventListener("click", () => {
+    if (currentGroupInfoId) refreshGroupInfo(currentGroupInfoId)
   })
   // 群信息弹窗：复制（事件委托）
   $("#groupInfoModal").addEventListener("click", (e) => {
@@ -7172,6 +7437,14 @@ function setupEventListeners() {
     jumpBtn.addEventListener("click", () => {
       const url = $("#userInfoAvatarUrl").textContent
       if (url && url !== "-") window.open(url, "_blank")
+    })
+  }
+  // 群头像链接跳转
+  const groupJumpBtn = $("#groupInfoJumpAvatar")
+  if (groupJumpBtn) {
+    groupJumpBtn.addEventListener("click", () => {
+      const url = $("#groupInfoAvatarUrl").href
+      if (url && url !== "#" && url !== "null") window.open(url, "_blank")
     })
   }
 
@@ -7313,10 +7586,6 @@ function setupEventListeners() {
   if (settingsSaveBtn) {
     settingsSaveBtn.addEventListener("click", handleSettingsSave)
   }
-  const refreshAllBtn = $("#refreshAllGroupInfoBtn")
-  if (refreshAllBtn) {
-    refreshAllBtn.addEventListener("click", refreshAllGroupInfo)
-  }
 
   // 验证码弹窗事件
   setupCodeModalListeners()
@@ -7342,12 +7611,6 @@ async function loadSettings() {
     $("#setPublicAccess").checked = cfg.publicAccess === true
     $("#setEnableQuanliangCommands").checked = cfg.enableQuanliangCommands !== false
     $("#setHttpLogSilent").checked = cfg.httpLogSilent === true
-    const napcatEnabled = cfg.napcatEnabled === true
-    $("#setNapcatEnabled").checked = napcatEnabled
-    $("#napcatSettings").style.display = napcatEnabled ? "block" : "none"
-    $("#setNapcatHost").value = cfg.napcatHost || ""
-    $("#setNapcatPort").value = cfg.napcatPort || 3000
-    $("#setNapcatToken").value = cfg.napcatToken || ""
 
     // 给问号提示添加智能定位：窄屏下不溢出
     $$(".settings-help").forEach(el => {
@@ -7383,10 +7646,6 @@ function getCurrentSettings() {
     publicAccess: $("#setPublicAccess").checked,
     enableQuanliangCommands: $("#setEnableQuanliangCommands").checked,
     httpLogSilent: $("#setHttpLogSilent").checked,
-    napcatEnabled: $("#setNapcatEnabled").checked,
-    napcatHost: $("#setNapcatHost").value.trim(),
-    napcatPort: parseInt($("#setNapcatPort").value) || 3000,
-    napcatToken: $("#setNapcatToken").value,
   }
 }
 
@@ -7423,11 +7682,7 @@ function checkSettingsChanged() {
     cur.notifyUserId !== (orig.notifyUserId || "") ||
     cur.enableQuanliangCommands !== orig.enableQuanliangCommands ||
     cur.httpLogSilent !== (orig.httpLogSilent === true) ||
-    cur.publicAccess !== (orig.publicAccess === true) ||
-    cur.napcatEnabled !== orig.napcatEnabled ||
-    cur.napcatHost !== (orig.napcatHost || "") ||
-    cur.napcatPort !== (orig.napcatPort || 3000) ||
-    (cur.napcatToken !== "••••••••" && cur.napcatToken !== orig.napcatToken)
+    cur.publicAccess !== (orig.publicAccess === true)
   const btn = $("#settingsSaveBtn")
   btn.disabled = !changed
   $("#settingsSavedHint").style.display = "none"
@@ -7436,22 +7691,13 @@ function checkSettingsChanged() {
 
 // 输入框变化时检查
 function setupSettingsListeners() {
-  for (const id of ["setBasePath", "setUsername", "setPassword", "setNotifyUserId", "setNapcatHost", "setNapcatPort", "setNapcatToken"]) {
+  for (const id of ["setBasePath", "setUsername", "setPassword", "setNotifyUserId"]) {
     const el = $("#" + id)
     if (el) el.addEventListener("input", checkSettingsChanged)
   }
   for (const id of ["setLoginEnabled", "setAutoRecordMessage", "setAutoDownloadImgorVideo", "setEnableQuanliangCommands", "setHttpLogSilent", "setPublicAccess"]) {
     const toggle = $("#" + id)
     if (toggle) toggle.addEventListener("change", checkSettingsChanged)
-  }
-  // napcatEnabled 开关：切换时同时控制 napcat 设置区域的显示/隐藏
-  const napcatToggle = $("#setNapcatEnabled")
-  if (napcatToggle) {
-    napcatToggle.addEventListener("change", () => {
-      const napcatDiv = $("#napcatSettings")
-      if (napcatDiv) napcatDiv.style.display = napcatToggle.checked ? "block" : "none"
-      checkSettingsChanged()
-    })
   }
   const sel = $("#setSaveTimes")
   if (sel) sel.addEventListener("change", checkSettingsChanged)
@@ -7499,10 +7745,6 @@ function flattenPayload(cur, orig) {
   if (!orig || cur.enableQuanliangCommands !== orig.enableQuanliangCommands) payload.enableQuanliangCommands = cur.enableQuanliangCommands
   if (!orig || cur.httpLogSilent !== (orig.httpLogSilent === true)) payload.httpLogSilent = cur.httpLogSilent
   if (!orig || cur.publicAccess !== (orig.publicAccess === true)) payload.publicAccess = cur.publicAccess
-  if (!orig || cur.napcatEnabled !== orig.napcatEnabled) payload.napcatEnabled = cur.napcatEnabled
-  if (!orig || cur.napcatHost !== (orig.napcatHost || "")) payload.napcatHost = cur.napcatHost
-  if (!orig || cur.napcatPort !== (orig.napcatPort || 3000)) payload.napcatPort = cur.napcatPort
-  if (!orig || (cur.napcatToken && cur.napcatToken !== "••••••••" && cur.napcatToken !== orig.napcatToken)) payload.napcatToken = cur.napcatToken
   return payload
 }
 
@@ -7518,9 +7760,6 @@ async function doSaveConfig(cur) {
       settingsOriginal = { ...cur, login: { ...cur.login } }
       if (cur.login?.password && cur.login.password !== "••••••••") {
         settingsOriginal.login.password = "••••••••"
-      }
-      if (cur.napcatToken && cur.napcatToken !== "••••••••") {
-        settingsOriginal.napcatToken = "••••••••"
       }
       const hint = $("#settingsSavedHint")
       hint.textContent = "已保存（重启后生效）"
