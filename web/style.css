@@ -3059,7 +3059,7 @@ body {
   border: none; background: transparent;
   color: var(--text-muted); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 50%; font-size: 18px;
+  border-radius: var(--radius-sm); font-size: 18px;
   transition: all .15s;
 }
 .modal-close:hover { background: var(--bg-hover); color: var(--text-primary); }

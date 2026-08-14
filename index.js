@@ -225,6 +225,8 @@ const pluginsRoot = path.dirname(QQBT_PLUGIN_DIR)
 const webPages = new Map()
 // 每个插件声明过可被 /api/web-page 访问的文件相对路径白名单（按 plugin 分组）
 const webPageAllowed = new Map()
+// 每个插件声明的「资源目录」（目录名，如 "public"）：该目录内任意文件均可访问
+const webPageAssets = new Map()
 // 已初始化的「操作模块」路径，避免 login / plugins/loaded 重复扫描时重复初始化
 const webInited = new Set()
 
@@ -244,6 +246,9 @@ function _normalizePage(pluginName, def) {
     html = typeof def.html === "string" ? def.html : ""
   }
   const asset = (f) => (f ? `${WEB_BASE}/api/web-page/${encodeURIComponent(plugin)}/${String(f).replace(/^\/+/, "")}` : null)
+  // 资源目录：字符串或数组，仅保留合法目录名（禁止穿越）
+  const assetsRaw = def.assetsDir == null ? [] : (Array.isArray(def.assetsDir) ? def.assetsDir : [def.assetsDir])
+  const assetsDirs = assetsRaw.map(s => String(s).trim()).filter(s => /^[A-Za-z0-9_-]+$/.test(s))
   // 排序优先级：数值越小越靠前（与插件加载 priority 约定一致）；未设置默认为 100
   const priority = Number.isFinite(def.priority) ? def.priority : 100
   return {
@@ -251,6 +256,7 @@ function _normalizePage(pluginName, def) {
     src, html,
     style: asset(def.style),
     script: asset(def.script),
+    assetsDirs,
   }
 }
 
@@ -266,6 +272,12 @@ function registerWebPage(pluginName, def) {
     const set = webPageAllowed.get(plugin)
     for (const f of [def.src, def.style, def.script]) {
       if (f) set.add(String(f).replace(/^\/+/, ""))
+    }
+    // 收集资源目录（整体放行其下所有文件）
+    if (p.assetsDirs.length) {
+      if (!webPageAssets.has(plugin)) webPageAssets.set(plugin, new Set())
+      const aset = webPageAssets.get(plugin)
+      for (const d of p.assetsDirs) aset.add(d)
     }
   }
   return true
@@ -375,6 +387,23 @@ Bot.webAdapter.registerApi = (method, route, ...handlers) => {
     : route
   Bot.express[method](full, apiAuthGuard, ...handlers)
 }
+
+// 当前选中的 Bot 直接存于进程内存（由主页面 selectBot 时上报），不落 Redis；
+// 各业务接口直接读取，自定义页面无需关心、也无需自行维护。
+let selectedSelfId = null
+
+/** 读取当前选中的 Bot selfId（无则返回 null） */
+function getSelectedSelfId() {
+  return selectedSelfId || null
+}
+
+// 主页面切换/清除选中 Bot 时调用，写入进程内存
+Bot.webAdapter.registerApi("post", "/select-bot", async (req, res) => {
+  selectedSelfId = req.body?.selfId || null
+  res.json({ ok: true, selfId: selectedSelfId })
+})
+// 暴露给插件：业务接口可直接获取当前选中的 Bot
+Bot.webAdapter.getSelectedSelfId = getSelectedSelfId
 
 // 前置鉴权中间件：必须在 scanWebPages() 之前注册，
 // 否则插件在 init() 中注册的路由会早于全局鉴权中间件而绕过校验。
@@ -1352,6 +1381,18 @@ function getBots() {
   }
   return bots
 }
+
+/**
+ * 获取当前选中的 Bot 完整信息（基于进程内存 selectedSelfId）。
+ * 返回 { self_id, nickname, avatar, appid, enabled } 或 null。
+ * 暴露为 Bot.webAdapter.getCurrentBot()，供其它自定义页面直接调用。
+ */
+function getCurrentBot() {
+  const sid = getSelectedSelfId()
+  if (!sid) return null
+  return getBots().find(b => b.self_id === sid) || null
+}
+Bot.webAdapter.getCurrentBot = getCurrentBot
 
 /** 获取活跃群组名称的辅助函数（同步优先，缺失则异步补） */
 // 待补队列 + 速率限制：gl 取不到名称时，先返回兜底 id 让前端立即显示，
@@ -2736,9 +2777,12 @@ Bot.express.get(webPageRe, (req, res) => {
     return res.sendStatus(403)
   }
 
-  // 3.5) 白名单校验：只允许访问该插件声明过的 src/style/script 文件，其余一律拒绝
+  // 3.5) 白名单校验：只允许访问该插件声明过的 src/style/script 文件，
+  //      或落在已声明资源目录（如 public）内的任意文件，其余一律拒绝
   const allowed = webPageAllowed.get(plugin)
-  if (!allowed || !allowed.has(relNorm)) return res.sendStatus(403)
+  const topDir = relNorm.split(/[\\/]/)[0]
+  const inAssets = webPageAssets.get(plugin)?.has(topDir) || false
+  if ((!allowed || !allowed.has(relNorm)) && !inAssets) return res.sendStatus(403)
 
   // 4) 用 path.join 强制拼接（会自动再次规范化），并校验严格落在插件 webadapter 目录内
   const base = path.join(pluginsRoot, plugin, "webadapter")
@@ -2981,6 +3025,19 @@ Bot.express.get(`${WEB_BASE}/api/bots`, (req, res) => {
     res.json(bots)
   } catch (err) {
     res.status(500).json({ error: String(err) })
+  }
+})
+
+// 当前选中的 Bot 完整信息（基于进程内存 selectedSelfId）
+// 注册为 webadapter 接口，路径：GET /api/bot/current
+// 同时已暴露 Bot.webAdapter.getCurrentBot() 供其它自定义页面直接调用
+Bot.webAdapter.registerApi("get", "/bot/current", (req, res) => {
+  try {
+    const sid = getSelectedSelfId()
+    const bot = getCurrentBot()
+    res.json({ ok: true, selectedSelfId: sid, bot, bots: getBots() })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err) })
   }
 })
 

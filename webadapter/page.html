@@ -31,6 +31,7 @@
       <tr><td><code>style</code></td><td>❌</td><td><code>webadapter/</code> 下的 css 文件，注入时按需加载。</td></tr>
       <tr><td><code>script</code></td><td>❌</td><td><code>webadapter/</code> 下的 js 文件，注入时按需加载。</td></tr>
       <tr><td><code>priority</code></td><td>❌</td><td>排序优先级，数值越小越靠前，默认 100。</td></tr>
+      <tr><td><code>assetsDir</code></td><td>❌</td><td>静态资源目录（相对 <code>webadapter/</code>），其下<b>所有文件整体放行</b>，经 <code>GET /&lt;basePath&gt;/api/web-page/&lt;插件名&gt;/&lt;目录&gt;/&lt;文件&gt;</code> 访问，无需逐个列白名单。可传字符串或数组，如 <code>"public"</code> 或 <code>["public","icons"]</code>。</td></tr>
     </tbody>
   </table>
   <p>同时提供 <code>html</code> 和 <code>src</code> 时，<code>src</code> 优先（iframe 模式）。<code>src</code> / <code>style</code> / <code>script</code> 写的是相对 <code>webadapter/</code> 目录的文件名，不要写绝对路径或 <code>../</code>。</p>
@@ -212,6 +213,14 @@ export function init(ctx) {
   <ul>
     <li>页面引用的 <code>src</code> / <code>style</code> / <code>script</code> 文件，统一通过 <code>GET /&lt;basePath&gt;/api/web-page/&lt;插件名&gt;/&lt;文件&gt;</code> 提供。</li>
     <li>这些文件必须位于该插件的 <code>webadapter/</code> 目录内（有防目录穿越校验），允许后缀：html, js, css, json, svg, png, jpg, jpeg, gif, webp, ico, woff, woff2, ttf, map。</li>
+    <li><b>静态资源目录（<code>assetsDir</code>）</b>：若页面还引用大量其它静态文件（图片、图标、音频等），无需在描述符里逐个列白名单，直接声明 <code>assetsDir</code> 把整个目录放行即可。例如：
+      <pre><code>registerPage({
+  id: "my-page",
+  title: "我的页面",
+  src: "dash.html",
+  assetsDir: "public" // webadapter/public/ 下所有文件均可访问
+})</code></pre>
+      其下文件通过 <code>GET /&lt;basePath&gt;/api/web-page/&lt;插件名&gt;/public/&lt;文件&gt;</code> 访问（如 <code>/qqbot-web/api/web-page/my-plugin/public/logo.png</code>），同样受登录鉴权保护。</li>
     <li>自定义页面接口与静态资源都受 WebAdapter 的登录鉴权保护：所有 <code>/api/*</code>（含插件接口）都必须通过公网限制 + 登录校验；未登录访问管理接口会收到 <code>401</code>，未登录访问页面会跳转登录页。</li>
   </ul>
 
@@ -222,6 +231,30 @@ export function init(ctx) {
     <li>当前已加载的页面列表可访问 <code>GET /&lt;basePath&gt;/api/web-pages</code> 查看。</li>
     <li>加载失败会在日志中打印（<code>加载自定义页面失败 ...</code>），按提示修正 <code>id</code> / 路径即可。</li>
   </ul>
+
+  <h2>七、获取当前选中的 Bot 信息</h2>
+  <p>WebAdapter 会记录控制台主页当前选中的 Bot（主页面 <code>selectBot</code> 时写入进程内存）。自定义页面 / 接口可以直接读取，<b>无需自己传 <code>selfId</code>、也无需维护选择状态</b>：</p>
+  <table>
+    <thead><tr><th>方式</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>Bot.webAdapter.getSelectedSelfId()</code></td><td>返回当前选中 Bot 的 <code>selfId</code>；未选中返回 <code>null</code></td></tr>
+      <tr><td><code>Bot.webAdapter.getCurrentBot()</code></td><td>返回当前选中 Bot 的完整信息对象 <code>{ self_id, nickname, avatar, appid, enabled }</code>；未选中返回 <code>null</code></td></tr>
+      <tr><td><code>GET /&lt;basePath&gt;/api/bot/current</code></td><td>HTTP 接口，返回 <code>{ ok, selectedSelfId, bot, bots }</code>（<code>bots</code> 为所有已配置 Bot 列表）</td></tr>
+    </tbody>
+  </table>
+  <p>示例（在 <code>webadapter/index.js</code> 的接口里使用）：</p>
+  <pre><code>import { Bot } from "yunzai"
+
+export function init(ctx) {
+  const { registerApi } = ctx
+
+  registerApi("get", "/my-page/bot-info", (_req, res) =&gt; {
+    const selfId = Bot.webAdapter.getSelectedSelfId()  // "xxx" 或 null
+    const bot = Bot.webAdapter.getCurrentBot()         // { self_id, nickname, avatar, appid, enabled } 或 null
+    res.json({ ok: true, selfId, bot })
+  })
+}</code></pre>
+  <blockquote>前端（iframe 页面）直接 <code>fetch</code> <code>GET /&lt;basePath&gt;/api/bot/current</code> 即可拿到同样的信息，无需把 selfId 写死在前端。</blockquote>
 </div>
 </body>
 </html>

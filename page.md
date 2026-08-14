@@ -37,6 +37,7 @@ QQBot-Web-Adapter 支持在不改动插件主入口的情况下，给 Web 控制
 | `style` | ❌ | `webadapter/` 下的 css 文件，注入时按需加载。 |
 | `script` | ❌ | `webadapter/` 下的 js 文件，注入时按需加载。 |
 | `priority` | ❌ | 排序优先级，数值越小越靠前，默认 `100`。 |
+| `assetsDir` | ❌ | 静态资源目录（相对 `webadapter/`），其下**所有文件整体放行**，经 `GET /<basePath>/api/web-page/<插件名>/<目录>/<文件>` 访问，无需逐个列白名单。可传字符串或数组，如 `"public"` 或 `["public","icons"]`。 |
 
 - 同时提供 `html` 和 `src` 时，`src` 优先（`iframe` 模式）。
 - `src` / `style` / `script` 里写的是相对 `webadapter/` 目录的文件名（如 `"dash.html"`），不要写绝对路径或 `../`。
@@ -285,6 +286,20 @@ export function init(ctx) {
   `GET /<basePath>/api/web-page/<插件名>/<文件>` 提供。
 - 这些文件必须位于**该插件的 `webadapter/` 目录内**（有防目录穿越校验），
   允许的后缀：`html, js, css, json, svg, png, jpg, jpeg, gif, webp, ico, woff, woff2, ttf, map`。
+- **静态资源目录（`assetsDir`）**：若页面还引用大量其它静态文件（图片、图标、音频等），
+  无需在描述符里逐个列白名单，直接声明 `assetsDir` 把整个目录放行即可。例如：
+
+  ```js
+  registerPage({
+    id: "my-page",
+    title: "我的页面",
+    src: "dash.html",
+    assetsDir: "public", // webadapter/public/ 下所有文件均可访问
+  })
+  ```
+
+  其下文件通过 `GET /<basePath>/api/web-page/<插件名>/public/<文件>` 访问
+  （如 `/qqbot-web/api/web-page/my-plugin/public/logo.png`），同样受登录鉴权保护。
 - 自定义页面接口与静态资源都受 WebAdapter 的登录鉴权保护：所有 `/api/*`（含插件接口）
   都必须通过公网限制 + 登录校验；未登录访问管理接口会收到 `401`，未登录访问页面会跳转登录页。
 
@@ -296,3 +311,35 @@ export function init(ctx) {
 - 新增 / 修改页面后，一般 **重启 Yunzai** 最稳妥；若只是改了已加载页面引用的 HTML/JS/CSS 静态文件，刷新浏览器即可。
 - 当前已加载的页面列表可访问 `GET /<basePath>/api/web-pages` 查看。
 - 加载失败会在日志中打印（`加载自定义页面失败 ...`），按提示修正 `id` / 路径即可。
+
+---
+
+## 七、获取当前选中的 Bot 信息
+
+WebAdapter 会记录控制台主页当前选中的 Bot（主页面 `selectBot` 时写入进程内存）。
+自定义页面 / 接口可以直接读取，**无需自己传 `selfId`、也无需维护选择状态**：
+
+| 方式 | 说明 |
+| --- | --- |
+| `Bot.webAdapter.getSelectedSelfId()` | 返回当前选中 Bot 的 `selfId`；未选中返回 `null` |
+| `Bot.webAdapter.getCurrentBot()` | 返回当前选中 Bot 的完整信息对象 `{ self_id, nickname, avatar, appid, enabled }`；未选中返回 `null` |
+| `GET /<basePath>/api/bot/current` | HTTP 接口，返回 `{ ok, selectedSelfId, bot, bots }`（`bots` 为所有已配置 Bot 列表） |
+
+示例（在 `webadapter/index.js` 的接口里使用）：
+
+```js
+import { Bot } from "yunzai"
+
+export function init(ctx) {
+  const { registerApi } = ctx
+
+  registerApi("get", "/my-page/bot-info", (_req, res) => {
+    const selfId = Bot.webAdapter.getSelectedSelfId()      // "xxx" 或 null
+    const bot = Bot.webAdapter.getCurrentBot()             // { self_id, nickname, avatar, appid, enabled } 或 null
+    res.json({ ok: true, selfId, bot })
+  })
+}
+```
+
+> 前端（iframe 页面）直接 `fetch` `GET /<basePath>/api/bot/current` 即可拿到同样的信息，
+> 无需把 selfId 写死在前端。

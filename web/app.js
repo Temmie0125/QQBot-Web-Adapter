@@ -543,6 +543,7 @@ function renderBotDropdown() {
             if (state.currentBotId === id) {
               state.currentBotId = null
               state.currentBot = null
+              reportSelectedBot("")
               renderBotSelector()
             }
           } catch (err) {
@@ -622,11 +623,22 @@ function closeBotDropdown() {
   $("#botSelector").classList.remove("active")
 }
 
+// 将当前选中的 Bot 上报到后端会话（接口自动据此确定操作对象），失败静默
+function reportSelectedBot(botId) {
+  api("/select-bot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ selfId: botId || "" })
+  }).catch(() => {})
+}
+
 async function selectBot(botId) {
   console.log("[selectBot] botId:", botId, "currentPage:", state.currentPage)
   const prevChatId = state.chatType === "group" ? state.currentGroupId : state.currentPrivateUserId
   state.currentBotId = botId
   state.currentBot = state.bots.find(b => b.self_id === botId)
+  // 上报到后端会话，供自定义页面（如菜单与面板）接口自动确定操作对象
+  reportSelectedBot(botId)
   state.allGroups = []
   state.allGroupsBotId = null
   await loadPins()

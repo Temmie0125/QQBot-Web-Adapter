@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QQBot 菜单与面板</title>
+<style>
+:root{
+  --accent:#4f6ef7; --accent-weak:#eef1fe; --accent-2:#3b56d4;
+  --bg:#f3f4f8; --card:#ffffff; --border:#e7e9f0;
+  --text:#1f2430; --text2:#8a90a2; --danger:#ef4444; --danger-weak:#fdecec;
+  --radius:14px; --shadow:0 1px 2px rgba(20,24,40,.04),0 6px 20px rgba(20,24,40,.06);
+  --shadow-lg:0 10px 30px rgba(20,24,40,.10);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+.topbar{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;height:58px;padding:0 26px;background:rgba(255,255,255,.86);backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--border)}
+.topbar-title{font-size:17px;font-weight:700;letter-spacing:.2px}
+.topbar-right{display:flex;align-items:center;gap:12px}
+
+/* 下拉选择器 */
+.drop{position:relative;flex:none}
+.drop .trigger{cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:14px;font-weight:500;min-width:148px;transition:.15s;box-shadow:0 1px 2px rgba(20,24,40,.03)}
+.drop .trigger:hover{border-color:#cdd2e0}
+.drop .trigger::after{content:"▾";color:var(--text2);font-size:12px;margin-left:auto}
+.drop.open .trigger::after{content:"▴"}
+.drop-panel{position:absolute;top:calc(100% + 8px);right:0;z-index:50;min-width:168px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);padding:6px;display:none;overflow:hidden}
+.drop.open .drop-panel{display:block}
+.drop-panel .opt{padding:10px 12px;border-radius:9px;cursor:pointer;font-size:13px;transition:.12s}
+.drop-panel .opt:hover{background:#f5f7fe}
+.drop-panel .opt.active{background:var(--accent-weak);color:var(--accent);font-weight:600}
+
+.btn{background:var(--accent);color:#fff;border:none;padding:9px 18px;border-radius:10px;font-size:13px;cursor:pointer;font-weight:600;transition:.15s;box-shadow:0 2px 8px rgba(79,110,247,.28)}
+.btn:hover{background:var(--accent-2);transform:translateY(-1px);box-shadow:0 4px 12px rgba(79,110,247,.34)}
+.btn:active{transform:translateY(0)}
+.btn.ghost{background:#eef0f7;color:var(--text);box-shadow:none}
+.btn.ghost:hover{background:#e3e6f3}
+.btn.sm{padding:6px 12px;font-size:12px;border-radius:8px}
+.btn.danger{background:#fff;color:var(--danger);border:1px solid #f3c2c2;box-shadow:none}
+.btn.danger:hover{background:var(--danger-weak);border-color:var(--danger)}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+.content{max-width:1120px;margin:0 auto;padding:28px 24px 60px}
+.page{display:none}
+.page.active{display:block}
+
+.section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;margin-bottom:18px;box-shadow:var(--shadow)}
+.section-title{font-size:15px;font-weight:700;margin-bottom:14px}
+.hint{font-size:12px;color:var(--text2);line-height:1.6}
+
+.split{display:grid;grid-template-columns:420px 1fr;gap:18px;align-items:start}
+@media (max-width:900px){.split{grid-template-columns:1fr}}
+
+/* 手机预览 */
+.phone{border:1px solid var(--border);border-radius:22px;overflow:visible;background:#eef0f4;box-shadow:var(--shadow-lg);position:relative}
+.phone-bar{background:var(--card);color:#1f2430;display:flex;align-items:center;gap:10px;padding:9px 12px;font-weight:600;border-radius:21px 21px 0 0}
+.phone-bar .bar-ico{width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:#3a3f4b;cursor:pointer;opacity:.9;transition:.15s;flex-shrink:0}
+.phone-bar .bar-ico:hover{opacity:1;color:var(--accent)}
+.phone-bar .bar-ico svg{width:22px;height:22px}
+.phone-bar .bar-info{flex:1;min-width:0;line-height:1.25}
+.phone-bar .bar-name{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.phone-bar .bar-status{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:500;color:#07c160}
+.phone-bar .status-dot{width:7px;height:7px;border-radius:50%;background:#07c160;flex-shrink:0;box-shadow:0 0 0 2px rgba(7,193,96,.18)}
+.phone-bar .bar-status.off{color:#9aa0aa}
+.phone-bar .bar-status.off .status-dot{background:#c2c7d0;box-shadow:none}
+.phone-bar .bar-arrow{color:#bcc1cc;font-weight:700}
+.phone-bar .bar-bot{width:24px;height:24px;border-radius:6px;object-fit:contain;flex-shrink:0;background:transparent;border:none;margin-left:8px;vertical-align:middle}
+.phone-body{background:linear-gradient(180deg,#f7f8fa,#eef0f4);min-height:128px;padding:16px}
+.chat-bubble{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:9px 13px;font-size:13px;display:inline-block;max-width:80%;box-shadow:0 1px 3px rgba(20,24,40,.06)}
+.phone-foot{border-top:1px solid var(--border);background:var(--card);padding:8px 12px 12px;border-radius:0 0 21px 21px;position:relative}
+/* 宽屏（预览与编辑并排两列）时：
+   1) 左侧菜单项/面板列表原地滚动，只影响列表本身，不撑动右侧预览；
+   2) 预览效果框整体高度随实际屏幕高度动态——屏幕够高则伸长，不足则缩短，
+      内部内容区可滚动以显示更多子菜单项与指令面板内容 */
+@media (min-width:901px){
+  /* 整行限制在视口高度内，两列等高，避免预览框超出页面需滚动整页 */
+  /* 顶部占用 = topbar(58) + content 上 padding(28) = 86；底部留 60 安全区 */
+  .split{height:calc(100vh - 150px);align-items:stretch}
+  .section{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  /* 预览框填满所在列剩余高度，内容区滚动；屏幕高则高、矮则矮，永不超出 */
+  .phone{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+  .phone-bar,.phone-foot{flex-shrink:0}
+  .phone-body{flex:1 1 auto;min-height:0;overflow:auto}
+  .list-col{max-height:calc(100vh - 200px);overflow:auto}
+}
+.phone-input{display:flex;align-items:center;gap:8px;padding:6px 4px}
+.phone-input .box{flex:1;border:1px solid var(--border);border-radius:18px;padding:8px 14px;color:var(--text2);font-size:12px;background:#f7f8fb}
+.phone-input .plus{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:16px;flex-shrink:0;cursor:pointer;transition:.15s}
+.phone-input .plus:hover{background:var(--accent-weak);color:var(--accent);border-color:var(--accent)}
+.phone-input .send-btn{width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;cursor:pointer;transition:.15s;border:none}
+.phone-input .send-btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.phone-input .send-btn svg{width:17px;height:17px}
+.phone-tool{display:flex;justify-content:space-around;padding:10px 0 0}
+.phone-tool{display:flex;justify-content:space-around;padding:10px 0 0}
+.phone-tool .tool-ico{width:22px;height:22px;color:#aab0c0;cursor:pointer;transition:.15s;display:flex;align-items:center;justify-content:center}
+.phone-tool .tool-ico:hover{color:var(--accent)}
+.phone-tool .tool-ico svg{width:22px;height:22px}
+/* 实际菜单栏：发送框上方胶囊按钮（左对齐，超出横向滚动） */
+.qq-menu-bar{display:flex;gap:8px;flex-wrap:nowrap;padding:10px 4px 4px;justify-content:flex-start;overflow-x:auto}
+.qq-menu-bar::-webkit-scrollbar{height:5px}
+.qq-menu-bar::-webkit-scrollbar-thumb{background:#d3d7e2;border-radius:4px}
+.qq-menu-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid #e1e4ec;background:#fff;border-radius:18px;padding:7px 14px;font-size:13px;font-weight:500;color:var(--text);box-shadow:0 1px 3px rgba(20,24,40,.05);transition:.15s;cursor:pointer;flex:0 0 auto;white-space:nowrap}
+.qq-menu-btn:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px)}
+.qq-menu-btn img{width:16px;height:16px;object-fit:contain}
+.qq-menu-btn .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:3px}
+/* 开关开启：胶囊微微变蓝 + 蓝点 */
+.qq-menu-btn.on{border-color:rgba(79,110,247,.5);background:#f5f7ff;color:var(--accent)}
+#subPops{display:contents}
+.qq-sub-pop{position:absolute;left:8px;right:8px;bottom:calc(100% + 8px);top:auto;background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);padding:12px 12px 6px;display:none;max-height:calc(100vh - 200px);overflow:auto;z-index:40}
+.qq-sub-pop.show{display:block;animation:pop2 .16s ease}
+.qq-sub-head{display:flex;align-items:center;gap:8px;padding:8px 12px 6px;font-weight:700;font-size:14px;color:#1f2430}
+.qq-sub-head img{width:18px;height:18px;object-fit:contain}
+.qq-sub-div{height:1px;background:var(--border);margin:0 2px 6px}
+.qq-sub-item{display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:13px;white-space:nowrap;border-radius:9px;transition:.12s}
+.qq-sub-item img{width:16px;height:16px;object-fit:contain;flex-shrink:0}
+.qq-sub-item span{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.qq-sub-item:hover{background:var(--accent-weak);color:var(--accent)}
+/* 面板预览浮层：从输入框上方延伸至顶部栏下方；指令少则只延伸必要高度 */
+.qq-panel{position:absolute;left:8px;right:8px;bottom:calc(100% + 8px);top:auto;background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);padding:12px 12px 6px;display:none;max-height:calc(100vh - 200px);overflow:auto;z-index:25}
+.qq-panel.show{display:block;animation:pop2 .16s ease}
+@keyframes pop2{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.qq-panel-head{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:700;color:#1f2430;padding:2px 4px 10px}
+.qq-panel-head svg{width:18px;height:18px;color:var(--accent);flex-shrink:0}
+.qq-panel-head #panelPreviewCount{margin-left:auto;font-weight:500;font-size:12px;color:var(--text2)}
+.qq-panel-div{height:1px;background:var(--border);margin:0 2px 6px}
+.qq-cmd{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 4px;border-bottom:1px solid #f1f2f6}
+.qq-cmd:last-child{border-bottom:none}
+.qq-cmd-name{font-size:14px;font-weight:600;white-space:nowrap;flex-shrink:0}
+.qq-cmd-desc{font-size:12px;color:var(--text2);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+/* 横幅列表 */
+.list-col{display:flex;flex-direction:column;gap:10px}
+.banner{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--border);border-radius:12px;background:#fcfcfe;transition:.15s;box-shadow:0 1px 2px rgba(20,24,40,.03)}
+.banner:hover{border-color:#cdd2e0;box-shadow:0 4px 14px rgba(20,24,40,.07);transform:translateY(-1px)}
+.banner.dragging{opacity:.45;box-shadow:none}
+.banner.drag-over{border-color:var(--accent);background:var(--accent-weak);transform:scale(1.01)}
+.banner .handle{cursor:grab;color:#c2c7d4;font-size:18px;padding:0 2px;user-select:none;line-height:1}
+.banner .handle:hover{color:var(--text2)}
+.banner .handle:active{cursor:grabbing}
+.banner .icon{width:36px;height:36px;border-radius:11px;background:var(--accent-weak);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.banner .icon img{width:20px;height:20px;object-fit:contain}
+.banner .meta{flex:1;min-width:0}
+.banner .name{font-size:14px;font-weight:600}
+.banner .sub{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.banner .acts{display:flex;gap:7px;flex-shrink:0}
+.banner .name .tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:6px;margin-left:6px;vertical-align:middle;line-height:1.6}
+.tag-cmd{background:var(--accent-weak);color:var(--accent)}
+.tag{background:#eef0f5;color:var(--text2)}
+.tag-admin{background:#fdecec;color:var(--danger)}
+
+/* 内联编辑表单 */
+.edit-form{padding:16px 16px 14px;border:1px solid var(--accent);border-radius:14px;background:linear-gradient(180deg,#fbfcff,#f7f9ff);margin-bottom:12px;box-shadow:0 6px 18px rgba(79,110,247,.10)}
+.edit-form .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.edit-form .field.full{grid-column:1/-1}
+.edit-form .field{margin-bottom:12px}
+.edit-form label{display:block;font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:500}
+.edit-form input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px;outline:none;background-color:#fff;transition:.18s;color:var(--text)}
+.edit-form input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,110,247,.14)}
+
+/* 自定义下拉组件（scope / target_type / 面板指令 type 通用） */
+.dd{position:relative;width:100%;user-select:none;font-size:13px;color:var(--text);text-align:left}
+.dd-val{display:flex;align-items:center;justify-content:space-between;padding:10px 12px 10px 14px;border:1px solid var(--border);border-radius:11px;background-color:#fcfcfe;cursor:pointer;transition:.18s;min-height:40px}
+.dd:hover .dd-val{border-color:#b9c0d4;background-color:#fff}
+.dd.open .dd-val{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,110,247,.14);background-color:#fff}
+.dd.disabled{opacity:.9}
+.dd.disabled .dd-val{background-color:#f3f4f8;color:var(--text2);cursor:not-allowed;border-color:#e7e9f0}
+.dd-text{flex:1;padding-right:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dd-arrow{flex-shrink:0;width:8px;height:8px;border-right:1.6px solid #7a8194;border-bottom:1.6px solid #7a8194;transform:rotate(45deg);transition:transform .2s;margin-right:8px;margin-bottom:2px}
+.dd.open .dd-arrow{transform:rotate(-135deg);margin-bottom:-2px}
+/* 下拉展开后的选项框 */
+.dd-list{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:50;margin:0;padding:6px;list-style:none;background:#fff;border:1px solid #e3e6ef;border-radius:13px;box-shadow:0 12px 32px rgba(20,24,40,.16);max-height:240px;overflow-y:auto;opacity:0;visibility:hidden;transform:translateY(-6px) scale(.985);transform-origin:top;transition:opacity .15s,transform .15s,visibility .15s}
+.dd.open .dd-list{opacity:1;visibility:visible;transform:translateY(0) scale(1)}
+.dd-list li{padding:10px 12px;border-radius:9px;cursor:pointer;transition:background .12s,color .12s;font-size:13px;color:var(--text);display:flex;align-items:center;justify-content:space-between}
+.dd-list li:hover{background:var(--accent-weak);color:var(--accent)}
+.dd-list li.sel{color:var(--accent);font-weight:600;background:var(--accent-weak)}
+.dd-list li.sel::after{content:"";width:7px;height:12px;border-right:2px solid var(--accent);border-bottom:2px solid var(--accent);transform:rotate(45deg);margin-left:8px;flex-shrink:0}
+.dd-list li.disabled{color:#c2c6d2;cursor:not-allowed;background:transparent}
+.dd-list li.disabled:hover{background:transparent;color:#c2c6d2}
+.edit-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+/* 关联对象字段：仅 target_type 非 all 时生效，all / 不支持的范围隐藏 */
+.target-fields.hidden{display:none}
+/* 仅管理员：c2c / dm 范围不显示该选项 */
+.only-admin-field.hidden{display:none}
+
+/* 类型选择（横幅内分段，选中用框框住） */
+.seg{display:flex;gap:6px;background:#eef0f5;padding:4px;border-radius:12px}
+.seg button{flex:1;border:1.5px solid transparent;background:#fff;padding:9px 6px;border-radius:9px;font-size:13px;cursor:pointer;color:var(--text2);font-weight:500;transition:.15s;display:flex;align-items:center;justify-content:center;gap:5px}
+.seg button:hover{color:var(--text);border-color:#d8dce8}
+.seg button.active{color:var(--accent);border-color:var(--accent);background:#fff;box-shadow:0 2px 6px rgba(79,110,247,.18);font-weight:700}
+.seg.locked{opacity:.6;pointer-events:none}
+.seg button:disabled{cursor:not-allowed;opacity:.45}
+.seg button:disabled:hover{border-color:transparent;color:var(--text2)}
+
+/* 胶囊开关 */
+.toggle-row{display:flex;align-items:center;justify-content:space-between}
+.toggle-row>label:first-child{margin-bottom:0}
+.switch-toggle{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0;cursor:pointer}
+.switch-toggle input{position:absolute;opacity:0;width:0;height:0}
+.switch-toggle .knob{position:absolute;inset:0;background:#d4d8e2;border-radius:999px;transition:.2s}
+.switch-toggle .knob::before{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(20,24,40,.25)}
+.switch-toggle input:checked+.knob{background:var(--accent)}
+.switch-toggle input:checked+.knob::before{transform:translateX(20px)}
+
+/* 子菜单编辑（横幅列表式，与主菜单一致） */
+.sub-edit{margin-top:12px;padding:14px;border:1px dashed #cfd4e2;border-radius:12px;background:#fff}
+.sub-edit-t{font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text)}
+.sub-banner{background:#fafbff;padding:9px 11px}
+
+/* 新增虚线框 */
+.add-box{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;padding:15px;border:1.5px dashed #c3c9d6;border-radius:12px;color:var(--text2);cursor:pointer;font-size:14px;font-weight:500;background:#fff;transition:.15s}
+.add-box:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-weak);transform:translateY(-1px)}
+/* 紧凑型添加框（openid 列表下方） */
+.add-box.sm{margin-top:8px;padding:9px;font-size:13px}
+/* openid 横幅列表 */
+.oid-list{display:flex;flex-direction:column;gap:8px}
+.oid-list .empty{font-size:12px;color:var(--text2);padding:2px 0}
+.oid-banner{padding:8px 12px}
+.oid-avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0;background:#eef0f5;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:var(--accent)}
+.oid-avatar.oid-letter{background:var(--accent-weak);color:var(--accent)}
+.hint.danger{color:var(--danger);font-size:12px}
+
+.scopebar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.scope{border:1px solid var(--border);background:var(--card);color:var(--text);padding:7px 13px;border-radius:10px;cursor:pointer;font-size:13px;font-family:inherit;transition:.15s}
+.scope:hover{border-color:#cdd2e0}
+.scope.active{border-color:var(--accent);color:var(--accent);background:var(--accent-weak);font-weight:600;box-shadow:0 0 0 3px rgba(79,110,247,.10)}
+
+/* 弹窗（遵循插件主页面 modal 规则：遮罩 flex 居中、四周留 16px；弹窗限高、内部滚动，绝不超出视口） */
+.modal-overlay{position:fixed;inset:0;background:rgba(20,24,40,.45);z-index:9000;display:none;backdrop-filter:blur(2px)}
+.modal-overlay.show{display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{width:680px;max-width:90vw;max-height:calc(100vh - 32px);display:flex;flex-direction:column;background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow-lg);position:relative;overflow:hidden}
+.modal-head{display:flex;gap:10px;align-items:center;padding:16px 20px;margin:0;border-bottom:1px solid var(--border);flex-shrink:0}
+.modal-title{font-size:17px;font-weight:700;margin-right:auto}
+.modal-close{position:static;flex-shrink:0;width:30px;height:30px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:18px;transition:.15s}
+.modal-close:hover{background:var(--bg);color:var(--text)}
+.modal .edit-form{flex:1;overflow-y:auto;padding:16px 20px;border:none;background:transparent}
+/* 弹窗内指令列表不加独立滚动限制，统一随 .edit-form 滚动，避免双重滚动条 */
+.modal .edit-form .list-col{max-height:none;overflow:visible}
+.footer-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;margin:0;border-top:1px solid var(--border);flex-shrink:0}
+
+.toast{position:fixed;right:18px;bottom:18px;z-index:9999;background:#1f2430;color:#fff;padding:11px 16px;border-radius:10px;font-size:13px;opacity:0;transform:translateY(8px);pointer-events:none;transition:.18s;box-shadow:var(--shadow-lg);max-width:80vw}
+.toast.show{opacity:1;transform:none}
+.toast.err{background:var(--danger)}
+/* 拖拽插入指示线 */
+.drop-indicator{height:3px;background:var(--accent);border-radius:2px;margin:2px 4px;box-shadow:0 0 0 3px rgba(79,110,247,.16)}
+.banner.dragging{opacity:.4}
+.banner.drag-over{box-shadow:0 0 0 2px var(--accent) inset}
+.loading{opacity:.6;pointer-events:none}
+.hidden{display:none !important}
+.empty{font-size:13px;color:var(--text2);padding:6px 2px}
+@media (max-width:720px){.content{padding:16px}.topbar{padding:0 16px}.modal-overlay{padding:8px}.modal{width:auto}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title">QQBot 菜单与面板</div>
+  <div class="topbar-right">
+    <div class="drop" id="modeDrop">
+      <div class="trigger" id="modeTrigger">自定义菜单</div>
+      <div class="drop-panel" id="modePanel">
+        <div class="opt active" data-mode="menu">自定义菜单</div>
+        <div class="opt" data-mode="panel">指令面板</div>
+      </div>
+    </div>
+    <button class="btn" id="saveBtn">保存</button>
+  </div>
+</div>
+
+<div class="content" id="app">
+
+  <!-- ===== 自定义菜单 ===== -->
+  <section id="page-menu" class="page active">
+    <div class="split">
+      <div class="section" style="position:relative">
+        <div class="section-title">实际效果预览</div>
+        <div class="phone">
+          <div class="phone-bar">
+            <span class="bar-ico" title="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span>
+            <div class="bar-info">
+              <div class="bar-name"><span id="barName">机器人</span><img class="bar-bot" id="barBot" src="./public/bot.png" alt="机器人"></div>
+              <div class="bar-status"><span class="status-dot"></span><span id="barStatus">在线</span> <span class="bar-arrow">›</span></div>
+            </div>
+            <span class="bar-ico" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span>
+          </div>
+          <div class="phone-body"><div class="chat-bubble">点击下方菜单按钮体验效果</div></div>
+          <div class="phone-foot">
+            <div class="qq-menu-bar" id="menuPreview"><span class="hint" style="margin:auto">（暂无菜单）</span></div>
+            <div id="subPops"></div>
+            <div class="phone-input"><div class="box">发送消息…</div><button class="send-btn" title="发送"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 14.01c-.5.06-.87.49-.87.99l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg></button></div>
+            <div class="phone-tool">
+              <span class="tool-ico" title="语音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg></span>
+              <span class="tool-ico" title="图片"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5-5L5 20"/></svg></span>
+              <span class="tool-ico" title="拍摄"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></span>
+              <span class="tool-ico" title="表情"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></span>
+              <span class="tool-ico" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div class="section-title" style="margin-bottom:0">菜单项</div>
+          <div class="hint">拖动左侧按钮可排序，最多 10 个</div>
+        </div>
+        <div id="menuList" class="list-col"></div>
+        <div class="add-box" id="menuAdd"><span>+</span> 新增菜单项</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 指令面板 ===== -->
+  <section id="page-panel" class="page">
+    <div class="split">
+      <div class="section" style="position:relative">
+        <div class="section-title">实际效果预览</div>
+        <div class="phone">
+          <div class="phone-bar">
+            <span class="bar-ico" title="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span>
+            <div class="bar-info">
+              <div class="bar-name"><span id="barName2">机器人</span><img class="bar-bot" id="barBot2" src="./public/bot.png" alt="机器人"></div>
+              <div class="bar-status"><span class="status-dot"></span><span id="barStatus2">在线</span> <span class="bar-arrow">›</span></div>
+            </div>
+            <span class="bar-ico" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span>
+          </div>
+          <div class="phone-body"><div class="chat-bubble">点击指令面板的预览按钮唤起面板</div></div>
+          <div class="phone-foot">
+            <div class="phone-input"><div class="box">发送消息…</div><button class="send-btn" title="发送"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 14.01c-.5.06-.87.49-.87.99l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg></button></div>
+            <div class="phone-tool">
+              <span class="tool-ico" title="语音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg></span>
+              <span class="tool-ico" title="图片"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5-5L5 20"/></svg></span>
+              <span class="tool-ico" title="拍摄"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></span>
+              <span class="tool-ico" title="表情"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></span>
+              <span class="tool-ico" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span>
+            </div>
+            <div class="qq-panel" id="panelPreview">
+              <div class="qq-panel-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg><span>快捷指令</span><span id="panelPreviewCount"></span></div>
+              <div class="qq-panel-div"></div>
+              <div id="panelPreviewList"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="scopebar" id="scopebar">
+          <button class="scope active" data-scope="group">群聊 group</button>
+          <button class="scope" data-scope="c2c">单聊 c2c</button>
+          <button class="scope" data-scope="channel">文字子频道 channel</button>
+          <button class="scope" data-scope="dm">频道私信 dm</button>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div class="section-title" style="margin-bottom:0">指令面板列表</div>
+          <div class="hint">拖动左侧按钮可排序，最多 20 个面板</div>
+        </div>
+        <div id="panelList" class="list-col"></div>
+        <div class="add-box" id="panelAdd"><span>+</span> 创建指令面板</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ===== 面板编辑弹窗 ===== -->
+<div class="modal-overlay" id="panel-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="panel-modal-title">创建指令面板</div>
+      <button class="modal-close" onclick="closeModal('panel-modal')">×</button>
+    </div>
+    <div class="edit-form">
+      <div class="grid">
+        <div class="field"><label>生效范围 scope（创建后不可改）</label>
+          <div class="dd" id="panel-f-scope" tabindex="0">
+            <div class="dd-val"><span class="dd-text"></span><span class="dd-arrow"></span></div>
+            <ul class="dd-list">
+              <li data-v="group">group</li>
+              <li data-v="c2c">c2c</li>
+              <li data-v="channel">channel</li>
+              <li data-v="dm">dm</li>
+            </ul>
+          </div>
+        </div>
+        <div class="field"><label>作用范围 target_type</label>
+          <div class="dd" id="panel-f-target_type" tabindex="0">
+            <div class="dd-val"><span class="dd-text"></span><span class="dd-arrow"></span></div>
+            <ul class="dd-list">
+              <li data-v="all">all 全局（所有用户/群生效）</li>
+              <li data-v="specific">specific 指定对象（填下方 openids）</li>
+            </ul>
+          </div>
+          <div class="hint" id="ttHint" style="margin-top:6px"></div>
+        </div>
+        <div class="field target-fields"><label>group_openids（group 场景指定的群）</label>
+          <div id="panel-f-group_openids-list" class="oid-list"></div>
+          <div class="add-box sm" onclick="openAddOpenid('group')"><span>+</span> 添加群聊</div>
+        </div>
+        <div class="field target-fields"><label>user_openids（c2c 场景指定的用户）</label>
+          <div id="panel-f-user_openids-list" class="oid-list"></div>
+          <div class="add-box sm" onclick="openAddOpenid('user')"><span>+</span> 添加用户</div>
+        </div>
+        <div class="field full" style="grid-column:1/-1"><label>备注 remark（最多 255 字符，不对用户展示）</label><input id="panel-f-remark" maxlength="255" placeholder="标记面板用途"></div>
+      </div>
+      <div style="display:flex;align-items:center;margin:14px 0 8px">
+        <div style="font-weight:600">面板指令 <span class="hint" id="panelItemCount"></span></div>
+      </div>
+      <div id="panelItemForm" class="list-col"></div>
+    </div>
+    <div class="footer-actions">
+      <button class="btn ghost" onclick="closeModal('panel-modal')">取消</button>
+      <button class="btn" id="panel-modal-save" onclick="submitPanel()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== openid 输入弹窗（添加/编辑关联用户或群） ===== -->
+<div class="modal-overlay" id="oid-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head">
+      <div class="modal-title" id="oid-modal-title">添加</div>
+      <button class="modal-close" onclick="closeModal('oid-modal')">×</button>
+    </div>
+    <div class="edit-form">
+      <div class="field"><label>openid</label><input id="oid-input" placeholder="请输入用户 openid 或群聊 openid"></div>
+      <div class="hint" id="oid-hint">输入用户或群的 openid，确定后会自动拉取昵称/头像</div>
+    </div>
+    <div class="footer-actions">
+      <button class="btn ghost" onclick="closeModal('oid-modal')">取消</button>
+      <button class="btn" id="oid-confirm" onclick="confirmOpenid()">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 单条指令编辑弹窗 ===== -->
+<div class="modal-overlay" id="panel-item-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-head">
+      <div class="modal-title" id="panel-item-modal-title">编辑指令</div>
+      <button class="modal-close" onclick="closeModal('panel-item-modal')">×</button>
+    </div>
+    <div class="edit-form">
+      <div class="field"><label>类型 type</label>
+        <div class="dd" id="panel-i-type" tabindex="0">
+          <div class="dd-val"><span class="dd-text"></span><span class="dd-arrow"></span></div>
+          <ul class="dd-list"><li data-v="command">command 指令</li><li data-v="link">link 链接</li></ul>
+        </div>
+      </div>
+      <div class="field only-admin-field toggle-row hidden" id="panel-i-admin-field"><label>仅管理员 only_admin</label><label class="switch-toggle"><input type="checkbox" id="panel-i-admin"><span class="knob"></span></label></div>
+      <div class="field"><label>名称 name（≤14 字符，约 7 个中文）</label><input id="panel-i-name" maxlength="14" placeholder="指令名称"></div>
+      <div class="field"><label>描述 desc（≤30 字符，约 15 个中文）</label><input id="panel-i-desc" maxlength="30" placeholder="指令描述"></div>
+      <div class="field hidden" id="panel-i-link-field"><label>跳转链接 link（https://）</label><input id="panel-i-link" placeholder="https://..."></div>
+    </div>
+    <div class="footer-actions">
+      <button class="btn ghost" onclick="closeModal('panel-item-modal')">取消</button>
+      <button class="btn" onclick="savePanelItem()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 关联对象弹窗 -->
+<div class="modal-overlay" id="target-modal">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-head"><div class="modal-title">修改关联对象</div><button class="modal-close" onclick="closeModal('target-modal')">×</button></div>
+    <div class="field"><label>操作 op</label><select id="target-f-op"><option value="add">add（添加生效）</option><option value="del">del（移除生效）</option></select></div>
+    <div class="field"><label>group_openids（逗号分隔）</label><input id="target-f-group_openids" placeholder="g_xxx"></div>
+    <div class="field"><label>user_openids（逗号分隔）</label><input id="target-f-user_openids" placeholder="u_xxx"></div>
+    <div class="hint">每项最多 20 个。</div>
+    <div class="footer-actions"><button class="btn ghost" onclick="closeModal('target-modal')">取消</button><button class="btn" onclick="submitTarget()">保存</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "/" + (location.pathname.split("/")[1] || "qqbot-web") + "/api/menu-panel"
+const BOT_URL = "/" + (location.pathname.split("/")[1] || "qqbot-web") + "/api/bot/current"
+// 图标（位于 webadapter/public/，经 /api/web-page/<plugin>/public/ 提供）
+const ICN = {send_message:"./public/send_msg_2.png", link:"./public/link.png", menu:"./public/submenu.png"}
+function getUrl(p){return API+p}
+function withSelfId(b){return b||{}}
+
+// 填充预览顶部栏的当前 Bot 信息（昵称 / 在线状态），两页共用
+function fillBar(idName,idStatus,name,online){
+  const n=document.getElementById(idName);if(n)n.textContent=name||"机器人"
+  const s=document.getElementById(idStatus)
+  if(s){const wrap=s.closest(".bar-status");if(wrap)wrap.classList.toggle("off",!online);s.textContent=online?"在线":"离线"}
+}
+// 把 bot 对象填入两页顶部栏
+function applyBot(bot){
+  const name = bot ? (bot.nickname || ("Bot " + (bot.self_id || ""))) : "未选择 Bot"
+  const online = bot ? (bot.enabled !== false) : false
+  fillBar("barName","barStatus",name,online)
+  fillBar("barName2","barStatus2",name,online)
+}
+// 当前 Bot 信息通过 webadapter 方法（/api/bot/current）获取，返回完整 bot 对象
+function loadCurrentBot(){
+  fetch(BOT_URL).then(r=>r.json()).then(d=>applyBot(d&&d.bot)).catch(()=>{})
+}
+
+function toast(msg,err){const el=$("#toast");el.textContent=msg;el.className="toast show"+(err?" err":"");clearTimeout(el._t);el._t=setTimeout(()=>el.className="toast",2600)}
+function setBusy(v){document.body.classList.toggle("loading",v)}
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function $(s){return document.querySelector(s)}
+function $$(s){return [...document.querySelectorAll(s)]}
+
+/* ===== 顶部下拉 ===== */
+let currentMode="menu"
+$("#modeTrigger").addEventListener("click",()=>$("#modeDrop").classList.toggle("open"))
+document.addEventListener("click",e=>{if(!e.target.closest("#modeDrop"))$("#modeDrop").classList.remove("open")})
+$$("#modePanel .opt").forEach(o=>o.addEventListener("click",()=>{
+  currentMode=o.dataset.mode
+  $$("#modePanel .opt").forEach(x=>x.classList.toggle("active",x===o))
+  $("#modeTrigger").textContent=o.textContent
+  $("#modeDrop").classList.remove("open")
+  switchPage(currentMode)
+}))
+$("#saveBtn").addEventListener("click",()=>{
+  if(currentMode==="menu")saveMenu()
+  else toast("指令面板请在列表中单独编辑/保存",true)
+})
+function switchPage(mode){
+  $$(".page").forEach(p=>p.classList.toggle("active",p.id==="page-"+mode))
+  if(mode==="menu")renderMenuList()
+  else loadPanels()
+}
+
+/* ===== 弹窗 ===== */
+function openModal(id){document.getElementById(id).classList.add("show");document.body.style.overflow="hidden"}
+function closeModal(id){document.getElementById(id).classList.remove("show");document.body.style.overflow=""}
+$$(".modal-overlay").forEach(o=>o.addEventListener("click",e=>{if(e.target===o)o.classList.remove("show")}))
+
+/* ===== 自定义菜单 ===== */
+let menuItems=[]
+let menuEditIdx=-1 // -1=无, -2=新增
+const MENU_TYPES=["send_message","link","switch","menu"]
+const MENU_ICON={send_message:ICN.send_message,link:ICN.link,switch:"./public/switch.svg",menu:ICN.menu}
+const MENU_LABEL={send_message:"发送消息",link:"跳转链接",switch:"开关",menu:"子菜单"}
+
+function normalizeMenuItem(x={}){
+  const type=MENU_TYPES.includes(x.type)?x.type:"send_message"
+  return {name:String(x.name||""),type,send_message:String(x.send_message||""),link:String(x.link||""),switch:{switch_id:String(x.switch?.switch_id||""),default:!!x.switch?.default},sub_menu_items:Array.isArray(x.sub_menu_items)?x.sub_menu_items.map(s=>({name:String(s.name||""),type:["send_message","link"].includes(s.type)?s.type:"send_message",send_message:String(s.send_message||""),link:String(s.link||"")})):[]}
+}
+function menuPayloadItem(x){
+  const o={type:x.type,name:x.name}
+  if(x.type==="send_message")o.send_message=x.send_message
+  if(x.type==="link")o.link=x.link
+  if(x.type==="switch")o.switch={switch_id:x.switch.switch_id,default:!!x.switch.default}
+  if(x.type==="menu")o.sub_menu_items=x.sub_menu_items.map(s=>{const so={type:s.type,name:s.name};if(s.type==="send_message")so.send_message=s.send_message;else so.link=s.link;return so})
+  return o
+}
+
+async function loadMenu(){
+  setBusy(true)
+  try{
+    const r=await fetch(getUrl("/menu"));const d=await r.json()
+    if(!d.ok){toast(d.error,true);return}
+    const root=d.data||{},menuObj=root.menu||root
+    const raw=menuObj.items||menuObj.buttons||[]
+    menuItems=Array.isArray(raw)?raw.map(normalizeMenuItem):[]
+    menuEditIdx=-1;renderMenuList();renderMenuPreview()
+  }catch(e){toast("读取菜单失败："+e.message,true)}
+  finally{setBusy(false)}
+}
+
+function renderMenuList(){
+  const box=$("#menuList")
+  if(!menuItems.length&&menuEditIdx!==-2){box.innerHTML='<div class="empty">暂无菜单项，点击下方新增。</div>';renderMenuPreview();return}
+  box.innerHTML=menuItems.map((x,i)=>{
+    if(menuEditIdx===i)return menuEditHtml(i)
+    const sub=x.type==="menu"?` · ${x.sub_menu_items.length} 个子项`:""
+    const extra=x.type==="send_message"?x.send_message:x.type==="link"?x.link:x.type==="switch"?`开关: ${x.switch.switch_id||"-"}`:""
+    return `<div class="banner" draggable="false" data-idx="${i}">
+      <div class="handle" draggable="true" title="拖动排序">⋮⋮</div>
+      <div class="icon"><img src="${MENU_ICON[x.type]}" alt=""></div>
+      <div class="meta"><div class="name">${esc(x.name||"未命名")}</div><div class="sub">${MENU_LABEL[x.type]}${sub}${extra?" · "+esc(extra):""}</div></div>
+      <div class="acts"><button class="btn sm ghost" onclick="editMenuItem(${i})">编辑</button><button class="btn sm danger" onclick="deleteMenuItem(${i})">删除</button></div>
+    </div>`
+  }).join("")
+  if(menuEditIdx===-2)box.insertAdjacentHTML("beforeend",menuEditHtml(-2))
+  setupMenuDrag()
+  renderSubList()
+  renderMenuPreview()
+}
+
+function renderMenuPreview(){
+  const bar=$("#menuPreview")
+  const previewItems=menuItems.map((x,i)=>menuEditIdx===i?readMenuFormFromDom(true):x)
+  if(!previewItems.length){bar.innerHTML='<span class="hint" style="margin:auto">（暂无菜单）</span>';if($("#subPops"))$("#subPops").innerHTML="";return}
+  const pops=[]
+  bar.innerHTML=previewItems.map((x,i)=>{
+    const name=x.name?esc(x.name):'<span style="color:var(--danger)">未命名</span>'
+    if(x.type==="menu"&&x.sub_menu_items.length){
+      const headIcn=ICN.menu?`<img src="${ICN.menu}" alt="">`:""
+      const items=x.sub_menu_items.map(s=>{
+        const si=ICN[s.type]?`<img src="${ICN[s.type]}" alt="">`:""
+        return `<div class="qq-sub-item">${si}<span>${esc(s.name||"子项")}</span></div>`
+      }).join("")
+      pops.push(`<div class="qq-sub-pop" data-subpop="${i}"><div class="qq-sub-head">${headIcn}<span>${name}</span></div><div class="qq-sub-div"></div>${items}</div>`)
+    }
+    const icon=ICN[x.type]?`<img src="${ICN[x.type]}" alt="">`:""
+    const isOn=x.type==="switch"&&!!x.switch?.default
+    const dot=isOn?'<span class="dot"></span>':''
+    return `<div class="qq-menu-btn ${x.type==="menu"?"qq-menu-sub":""} ${isOn?"on":""}" data-mbtn="${i}">${icon}${name}${dot}</div>`
+  }).join("")
+  if($("#subPops"))$("#subPops").innerHTML=pops.join("")
+}
+// 点击子菜单按钮：事件委托在预览栏上，弹窗挂在 #subPops（foot 内，避免被菜单栏裁剪）
+$("#menuPreview").addEventListener("click",e=>{
+  const btn=e.target.closest(".qq-menu-sub")
+  if(!btn)return
+  e.stopPropagation()
+  const pop=document.querySelector('#subPops .qq-sub-pop[data-subpop="'+btn.dataset.mbtn+'"]')
+  if(!pop)return
+  const show=!pop.classList.contains("show")
+  $$(".qq-sub-pop.show").forEach(p=>p.classList.remove("show"))
+  if(show)pop.classList.add("show")
+})
+document.addEventListener("click",e=>{
+  if(!e.target.closest(".qq-menu-bar"))$$(".qq-sub-pop.show").forEach(p=>p.classList.remove("show"))
+  if(!e.target.closest(".qq-panel")&&!e.target.closest("[onclick^=\"previewThisPanel\"]"))$("#panelPreview").classList.remove("show")
+})
+
+function menuEditHtml(idx,overrideType){
+  const isNew=idx<0
+  const base=isNew?{name:"",type:"send_message",send_message:"",link:"",switch:{switch_id:"",default:false},sub_menu_items:[]}:JSON.parse(JSON.stringify(menuItems[idx]))
+  if(overrideType)base.type=overrideType
+  const x=base
+  const seg=MENU_TYPES.map(t=>`<button type="button" data-type="${t}" class="${x.type===t?"active":""}">${MENU_LABEL[t]}</button>`).join("")
+  return `<div class="edit-form" data-edit>
+    <div class="grid">
+      <div class="field"><label>按钮名称 name</label><input id="m-f-name" value="${esc(x.name)}" placeholder="最多 10 字符"></div>
+      <div class="field" style="grid-column:1/-1"><label>按钮类型 type</label><div class="seg" id="m-f-type">${seg}</div></div>
+      <div id="m-fields" style="grid-column:1/-1">${menuFieldsHtml(x)}</div>
+    </div>
+    <div class="edit-actions"><button class="btn ghost" onclick="cancelMenuEdit()">取消</button><button class="btn" onclick="confirmMenuEdit()">${isNew?"添加":"保存"}</button></div>
+  </div>`
+}
+function menuFieldsHtml(x){
+  if(x.type==="send_message")return `<div class="field full"><label>发送内容 send_message</label><input id="m-f-send_message" value="${esc(x.send_message)}" placeholder="点击后填入输入框的文本"></div>`
+  if(x.type==="link")return `<div class="field full"><label>跳转链接 link</label><input id="m-f-link" value="${esc(x.link)}" placeholder="https://..."></div>`
+  if(x.type==="switch")return `<div class="field"><label>开关标识 switch_id</label><input id="m-f-switch_id" value="${esc(x.switch.switch_id)}" placeholder="如 my_switch"></div>
+    <div class="hint" style="margin-top:6px">开关标识将作为插件事件字段名，请尽量使用合法字符（字母、数字、下划线，建议以字母开头），避免使用 yunzai 常用字段（如 openid、group_id、message 等）。保存后可在插件中通过 <code>this.e.你的标识</code> 或 <code>this.e[你的标识]</code> 读取：开启时值为 <code>1</code>，未开启时为 <code>undefined</code>。</div>
+    <div class="field toggle-row"><label>默认打开 default</label>
+      <label class="switch-toggle"><input type="checkbox" id="m-f-switch_default" ${x.switch.default?"checked":""}><span class="knob"></span></label>
+    </div>`
+  if(x.type==="menu")return `<div class="sub-edit"><div class="sub-edit-t">二级菜单（最多 5 个，拖动左侧按钮可排序）</div><div id="m-sub-list" class="list-col"></div><div class="add-box" id="subAdd" style="margin-top:10px"><span>+</span> 新增二级菜单</div></div>`
+  return ""
+}
+/* ===== 子项（二级菜单）横幅列表式编辑 ===== */
+let subEditIdx=-1 // -1 无 / -2 新增 / >=0 编辑第 j 个
+let draftMenu=null // 新增态草稿
+const SUB_TYPES=["send_message","link"]
+const SUB_ICON={send_message:ICN.send_message,link:ICN.link}
+const SUB_LABEL={send_message:"发送消息",link:"跳转链接"}
+function getDraftMenu(){
+  if(menuEditIdx===-2){if(!draftMenu)draftMenu={name:"",type:"menu",send_message:"",link:"",switch:{switch_id:"",default:false},sub_menu_items:[]};return draftMenu}
+  return menuItems[menuEditIdx]
+}
+function normalizeSub(x={}){return {name:String(x.name||""),type:["send_message","link"].includes(x.type)?x.type:"send_message",send_message:String(x.send_message||""),link:String(x.link||"")}}
+function renderSubList(){
+  const box=$("#m-sub-list");if(!box)return
+  const d=getDraftMenu()
+  if(!d||d.type!=="menu"){box.innerHTML="";return}
+  if(subEditIdx!==-2&&!d.sub_menu_items.length){box.innerHTML='<div class="empty">暂无二级菜单，点击下方新增。</div>'}
+  else{
+    box.innerHTML=d.sub_menu_items.map((s,j)=>{
+      if(subEditIdx===j)return subEditHtml(j)
+      const val=s.type==="send_message"?s.send_message:s.link
+      const extra=val?` · ${esc(val)}`:""
+      return `<div class="banner sub-banner" data-sidx="${j}">
+        <div class="handle" draggable="true" title="拖动排序">⋮⋮</div>
+        <div class="icon"><img src="${SUB_ICON[s.type]}" alt=""></div>
+        <div class="meta"><div class="name">${esc(s.name||"未命名")}</div><div class="sub">${SUB_LABEL[s.type]}${extra}</div></div>
+        <div class="acts"><button class="btn sm ghost" onclick="editSubItem(${j})">编辑</button><button class="btn sm danger" onclick="deleteSubItem(${j})">删除</button></div>
+      </div>`
+    }).join("")
+    if(subEditIdx===-2)box.insertAdjacentHTML("beforeend",subEditHtml(-2))
+  }
+  setupSubDrag()
+}
+function subEditHtml(idx){
+  const isNew=idx<0
+  const s=isNew?{name:"",type:"send_message",send_message:"",link:""}:getDraftMenu().sub_menu_items[idx]
+  const seg=SUB_TYPES.map(t=>`<button type="button" data-stype="${t}" class="${s.type===t?"active":""}">${SUB_LABEL[t]}</button>`).join("")
+  return `<div class="edit-form" data-sedit style="margin-top:8px">
+    <div class="grid">
+      <div class="field"><label>名称 name</label><input id="s-f-name" value="${esc(s.name)}" placeholder="最多 10 字符"></div>
+      <div class="field" style="grid-column:1/-1"><label>类型 type</label><div class="seg" id="s-f-type">${seg}</div></div>
+      <div id="s-fields" style="grid-column:1/-1">${subFieldsHtml(s)}</div>
+    </div>
+    <div class="edit-actions"><button class="btn ghost" onclick="cancelSubEdit()">取消</button><button class="btn" onclick="confirmSubEdit()">${isNew?"添加":"保存"}</button></div>
+  </div>`
+}
+function subFieldsHtml(s){
+  if(s.type==="send_message")return `<div class="field full"><label>发送内容</label><input id="s-f-val" value="${esc(s.send_message)}" placeholder="点击后填入输入框的文本"></div>`
+  if(s.type==="link")return `<div class="field full"><label>跳转链接（https://）</label><input id="s-f-val" value="${esc(s.link)}" placeholder="https://..."></div>`
+  return ""
+}
+function editSubItem(j){subEditIdx=j;renderSubList()}
+function cancelSubEdit(){subEditIdx=-1;renderSubList()}
+function confirmSubEdit(){
+  const d=getDraftMenu()
+  const type=document.querySelector("#s-f-type button.active")?.dataset.stype||"send_message"
+  const name=$("#s-f-name").value.trim()
+  const val=$("#s-f-val").value.trim()
+  if(!name){toast("二级菜单名称不能为空",true);return}
+  if(type==="link"&&!val.startsWith("https://")){toast("二级菜单链接必须以 https:// 开头",true);return}
+  if(type==="send_message"&&!val){toast("二级菜单发送内容不能为空",true);return}
+  const item={name,type,send_message:type==="send_message"?val:"",link:type==="link"?val:""}
+  if(subEditIdx===-2)d.sub_menu_items.push(item);else d.sub_menu_items[subEditIdx]=item
+  subEditIdx=-1;renderSubList();renderMenuPreview()
+}
+function deleteSubItem(j){if(!confirm("确定删除该二级菜单？"))return;getDraftMenu().sub_menu_items.splice(j,1);renderSubList();renderMenuPreview()}
+function addSubItem(){if(getDraftMenu().sub_menu_items.length>=5){toast("二级菜单最多 5 个",true);return}subEditIdx=-2;renderSubList()}
+let subDragSrc=null
+function setupSubDrag(){
+  $$("#m-sub-list .sub-banner .handle").forEach(h=>{
+    h.addEventListener("dragstart",e=>{const b=h.closest(".sub-banner");subDragSrc=b;b.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain","")})
+    h.addEventListener("dragend",()=>{if(subDragSrc)subDragSrc.classList.remove("dragging");subDragSrc=null;clearDropIndicator();$$(".sub-banner.drag-over").forEach(b=>b.classList.remove("drag-over"))})
+  })
+  $$("#m-sub-list .sub-banner").forEach(b=>{
+    b.addEventListener("dragover",e=>{
+      e.preventDefault()
+      if(!subDragSrc||subDragSrc===b){clearDropIndicator();b.classList.remove("drag-over");return}
+      const m=computeDropMode(b,e.clientY)
+      if(m.mode==="insert"){b.classList.remove("drag-over");showDropIndicator(b,m.after)}
+      else{clearDropIndicator();b.classList.add("drag-over")}
+    })
+    b.addEventListener("dragleave",()=>{b.classList.remove("drag-over")})
+    b.addEventListener("drop",e=>{
+      e.preventDefault()
+      b.classList.remove("drag-over")
+      if(!subDragSrc)return
+      const arr=getDraftMenu().sub_menu_items
+      const from=Number(subDragSrc.dataset.sidx),to=Number(b.dataset.sidx)
+      const m=computeDropMode(b,e.clientY)
+      if(m.mode==="swap"){
+        if(from!==to){const t=arr[to];arr[to]=arr[from];arr[from]=t}
+      }else{
+        let insert=m.after?to+1:to
+        if(from<insert)insert-=1
+        if(insert<0)insert=0
+        reorderArr(arr,from,insert)
+      }
+      clearDropIndicator()
+      renderSubList()
+    })
+  })
+}
+
+function readMenuFormFromDom(quiet){
+  const typeBtn=document.querySelector("#m-f-type button.active")
+  const type=typeBtn?typeBtn.dataset.type:"send_message"
+  const item={name:$("#m-f-name").value.trim(),type,send_message:"",link:"",switch:{switch_id:"",default:false},sub_menu_items:[]}
+  if(type==="send_message")item.send_message=$("#m-f-send_message").value.trim()
+  if(type==="link")item.link=$("#m-f-link").value.trim()
+  if(type==="switch"){item.switch.switch_id=$("#m-f-switch_id").value.trim();item.switch.default=$("#m-f-switch_default").checked}
+  if(type==="menu"){
+    const d=getDraftMenu()
+    item.sub_menu_items=(d&&Array.isArray(d.sub_menu_items)?d.sub_menu_items:[]).map(normalizeSub)
+  }
+  return item
+}
+function validateMenuItem(x,idx){
+  if(!x.name)return "第 "+(idx+1)+" 个菜单名称不能为空"
+  if(x.type==="link"&&!x.link.startsWith("https://"))return "第 "+(idx+1)+" 个菜单链接必须以 https:// 开头"
+  if(x.type==="send_message"&&!x.send_message)return "第 "+(idx+1)+" 个菜单发送内容不能为空"
+  if(x.type==="switch"&&!x.switch.switch_id)return "第 "+(idx+1)+" 个菜单 switch_id 不能为空"
+  if(x.type==="menu"){
+    if(x.sub_menu_items.length>5)return "第 "+(idx+1)+" 个菜单子项最多 5 个"
+    for(let j=0;j<x.sub_menu_items.length;j++){
+      const s=x.sub_menu_items[j]
+      if(!s.name)return "第 "+(idx+1)+" 个菜单第 "+(j+1)+" 个子项名称不能为空"
+      if(s.type==="link"&&!s.link.startsWith("https://"))return "第 "+(idx+1)+" 个菜单第 "+(j+1)+" 个子项链接必须 https://"
+      if(s.type==="send_message"&&!s.send_message)return "第 "+(idx+1)+" 个菜单第 "+(j+1)+" 个子项发送内容不能为空"
+    }
+  }
+  return ""
+}
+
+function editMenuItem(i){menuEditIdx=i;subEditIdx=-1;draftMenu=null;renderMenuList()}
+function cancelMenuEdit(){menuEditIdx=-1;subEditIdx=-1;draftMenu=null;renderMenuList()}
+function confirmMenuEdit(){
+  if(subEditIdx!==-1){toast("请先完成二级菜单的编辑",true);return}
+  const item=readMenuFormFromDom()
+  const err=validateMenuItem(item,menuEditIdx===-2?menuItems.length:menuEditIdx)
+  if(err){toast(err,true);return}
+  if(menuEditIdx===-2)menuItems.push(item);else menuItems[menuEditIdx]=item
+  menuEditIdx=-1;subEditIdx=-1;draftMenu=null;renderMenuList()
+}
+function deleteMenuItem(i){if(!confirm("确定删除此菜单项？"))return;menuItems.splice(i,1);renderMenuList()}
+$("#menuAdd").addEventListener("click",()=>{if(menuItems.length>=10){toast("最多 10 个一级菜单",true);return}menuEditIdx=-2;renderMenuList()})
+// 主菜单类型切换（seg）：仅更新 active + 局部重建字段，保留名称输入
+$("#menuList").addEventListener("click",e=>{
+  const segBtn=e.target.closest("#m-f-type button[data-type]")
+  if(segBtn){
+    const newType=segBtn.dataset.type
+    const segBox=segBtn.closest(".seg")
+    if(segBox)segBox.querySelectorAll("button").forEach(b=>b.classList.toggle("active",b===segBtn))
+    if(menuEditIdx>=0)menuItems[menuEditIdx].type=newType
+    else if(menuEditIdx===-2){
+      if(!draftMenu)draftMenu={name:"",type:"menu",send_message:"",link:"",switch:{switch_id:"",default:false},sub_menu_items:[]}
+      draftMenu.type=newType
+    }
+    const box=$("#m-fields");if(box)box.innerHTML=menuFieldsHtml({type:newType,send_message:"",link:"",switch:{switch_id:"",default:false},sub_menu_items:[]})
+    subEditIdx=-1;renderSubList()
+    return
+  }
+})
+// 子项类型切换（seg） / +新增 框
+$("#menuList").addEventListener("click",e=>{
+  const segBtn=e.target.closest("#s-f-type button[data-stype]")
+  if(segBtn){
+    const newType=segBtn.dataset.stype
+    const segBox=segBtn.closest(".seg")
+    if(segBox)segBox.querySelectorAll("button").forEach(b=>b.classList.toggle("active",b===segBtn))
+    const idx=subEditIdx
+    const d=getDraftMenu()
+    const keepName=$("#s-f-name")?.value.trim()
+    const keepVal=$("#s-f-val")?.value.trim()
+    if(idx>=0){d.sub_menu_items[idx]={name:keepName,type:newType,send_message:newType==="send_message"?keepVal:"",link:newType==="link"?keepVal:""}}
+    else if(idx===-2){draftMenu={name:d.name,type:"menu",send_message:"",link:"",switch:{switch_id:"",default:false},sub_menu_items:d.sub_menu_items}}
+    subEditIdx=idx;renderSubList()
+    const f=document.querySelector("[data-sedit]")
+    if(f){if(keepName)$("#s-f-name").value=keepName;const v=f.querySelector("#s-f-val");if(v&&keepVal)v.value=keepVal}
+    return
+  }
+  if(e.target.closest("#subAdd")){addSubItem();return}
+})
+// 编辑表单内任意输入实时刷新左侧预览
+$("#menuList").addEventListener("input",e=>{
+  if(e.target.closest(".edit-form")||e.target.closest("[data-sedit]"))renderMenuPreview()
+})
+
+async function saveMenu(){
+  if(menuEditIdx!==-1){toast("请先完成当前编辑",true);return}
+  for(let i=0;i<menuItems.length;i++){const err=validateMenuItem(menuItems[i],i);if(err){toast(err,true);return}}
+  if(!confirm("确定覆盖机器人完整全局自定义菜单？"))return
+  setBusy(true)
+  try{
+    const r=await fetch(API+"/menu",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(withSelfId({menu:{items:menuItems.map(menuPayloadItem)}}))})
+    const d=await r.json()
+    if(!d.ok){toast(d.error,true);return}
+    toast("菜单已保存")
+  }catch(e){toast("保存失败："+e.message,true)}finally{setBusy(false)}
+}
+
+/* 拖拽排序 */
+let dragSrc=null
+// 通用重排：从 from 移到 to（to 为目标位置索引，已考虑删除后偏移）
+function reorderArr(arr,from,to){
+  if(from===to||from<0)return
+  const it=arr.splice(from,1)[0]
+  let t=to; if(from<to)t=to-1 // 删除后后半段索引前移一位
+  if(t<0)t=0; if(t>arr.length)t=arr.length
+  arr.splice(t,0,it)
+}
+// 显示插入指示线：在 target 条之前或之后插入一条 .drop-indicator
+function showDropIndicator(target,after){
+  clearDropIndicator()
+  const ind=document.createElement("div");ind.className="drop-indicator"
+  if(after)target.after(ind);else target.before(ind)
+}
+function clearDropIndicator(){$$(".drop-indicator").forEach(x=>x.remove())}
+// 计算拖拽落点模式：
+//   返回 {mode:"swap"} 表示覆盖核心区→互换位置
+//   返回 {mode:"insert", after:bool} 表示落在边缘缝隙→插入（after=true 插后面）
+function computeDropMode(b,clientY){
+  const r=b.getBoundingClientRect()
+  const rel=(clientY-r.top)/r.height
+  if(rel<0.25)return {mode:"insert",after:false}
+  if(rel>0.75)return {mode:"insert",after:true}
+  return {mode:"swap"}
+}
+function setupMenuDrag(){
+  $$("#menuList .banner .handle").forEach(h=>{
+    h.addEventListener("dragstart",e=>{
+      const banner=h.closest(".banner");dragSrc=banner;banner.classList.add("dragging");e.dataTransfer.effectAllowed="move"
+      e.dataTransfer.setData("text/plain","")// Firefox 需要
+    })
+    h.addEventListener("dragend",()=>{if(dragSrc)dragSrc.classList.remove("dragging");dragSrc=null;clearDropIndicator();$$(".banner.drag-over").forEach(b=>b.classList.remove("drag-over"))})
+  })
+  $$("#menuList .banner").forEach(b=>{
+    b.addEventListener("dragover",e=>{
+      e.preventDefault()
+      if(!dragSrc||dragSrc===b){clearDropIndicator();b.classList.remove("drag-over");return}
+      const m=computeDropMode(b,e.clientY)
+      if(m.mode==="insert"){b.classList.remove("drag-over");showDropIndicator(b,m.after)}
+      else{clearDropIndicator();b.classList.add("drag-over")}
+    })
+    b.addEventListener("dragleave",()=>{b.classList.remove("drag-over")})
+    b.addEventListener("drop",e=>{
+      e.preventDefault()
+      b.classList.remove("drag-over")
+      if(!dragSrc)return
+      const from=Number(dragSrc.dataset.idx),to=Number(b.dataset.idx)
+      const m=computeDropMode(b,e.clientY)
+      if(m.mode==="swap"){
+        if(from!==to){const t=menuItems[to];menuItems[to]=menuItems[from];menuItems[from]=t}
+      }else{
+        let insert=m.after?to+1:to
+        if(from<insert)insert-=1
+        if(insert<0)insert=0
+        reorderArr(menuItems,from,insert)
+      }
+      clearDropIndicator()
+      renderMenuList()
+    })
+  })
+}
+
+/* ===== 指令面板 ===== */
+let panels=[],activePanelScope="group",panelEditIdx=-1,currentPanelId=null,currentTargetId=null
+let panelEditor={scope:"group",target_type:"all",groupOpenids:[],userOpenids:[],remark:"",items:[]}
+let activePreviewPanel=null // 非 null 时，面板预览展示该已保存面板；否则展示正在编辑的草稿
+
+function normalizePanelItem(x={}){return {name:String(x.name||""),desc:String(x.desc||""),type:["command","link"].includes(x.type)?x.type:"command",only_admin:!!x.only_admin,link:String(x.link||"")}}
+function parseList(s){return (s||"").split(",").map(x=>x.trim()).filter(Boolean)}
+
+$("#scopebar").addEventListener("click",e=>{
+  const b=e.target.closest("[data-scope]");if(!b)return
+  activePanelScope=b.dataset.scope;$$(".scope").forEach(x=>x.classList.toggle("active",x===b));loadPanels()
+})
+// 指令面板预览由列表中的「预览」按钮（previewThisPanel）唤起，不再需要 + 按钮
+
+async function loadPanels(){
+  activePreviewPanel=null
+  setBusy(true)
+  try{
+    const r=await fetch(getUrl("/panels?scope="+encodeURIComponent(activePanelScope)));const d=await r.json()
+    if(!d.ok){toast(d.error,true);return}
+    panels=Array.isArray(d.data)?d.data:[]
+    panelEditIdx=-1;renderPanelList();renderPanelPreview()
+  }catch(e){toast("读取面板失败："+e.message,true)}finally{setBusy(false)}
+}
+function panelName(p){return p.panel?.remark||p.panel?.name||p.name}
+function renderPanelList(){
+  const box=$("#panelList")
+  if(!panels.length){box.innerHTML='<div class="empty">该范围暂无指令面板。</div>';return}
+  box.innerHTML=panels.map((p,i)=>{
+    const pid=p.panel_id||p.id||""
+    const name=(p.panel&&p.panel.remark)?esc(p.panel.remark):"未标记remark"
+    const items=(p.panel?.items||p.panel?.buttons||[]).length
+    const t=p.create_time||p.panel?.create_time||p.update_time||p.panel?.update_time
+    const timeTxt=fmtPanelTime(t)
+    return `<div class="banner" draggable="false" data-pidx="${i}">
+      <div class="handle" draggable="true" title="拖动排序">⋮⋮</div>
+      <div class="icon">🎛️</div>
+      <div class="meta"><div class="name">${name}</div><div class="sub">${esc(p.scope||activePanelScope)} · ${esc(p.target_type||"all")} · ${items} 个元素</div><div class="sub">ID: ${esc(pid)} · ${timeTxt}</div></div>
+      <div class="acts"><button class="btn sm ghost" onclick="editPanelItem(${i})">编辑</button><button class="btn sm ghost" onclick="previewThisPanel(${i})">预览</button><button class="btn sm danger" onclick="deletePanelItem(${i})">删除</button></div>
+    </div>`
+  }).join("")
+  setupPanelDrag()
+}
+function renderPanelPreview(){
+  // activePreviewPanel 不为空时，预览该已保存面板的按钮；否则预览正在编辑的草稿
+  const fromPanel = activePreviewPanel!=null ? panels[activePreviewPanel] : null
+  let items
+  if(fromPanel){
+    const pn=fromPanel.panel||{}
+    items=pn.items||pn.buttons||[]
+  }else{
+    items=panelEditor.items
+  }
+  $("#panelPreviewCount").textContent=items.length+" 条指令"
+  const list=$("#panelPreviewList")
+  if(!items.length){list.innerHTML='<div class="hint" style="padding:8px">暂无指令</div>';return}
+  list.innerHTML=items.map(x=>{
+    const nm=x.name?("/"+esc(x.name)):"/未命名"
+    const ds=x.desc?esc(x.desc):""
+    return `<div class="qq-cmd"><span class="qq-cmd-name">${nm}</span><span class="qq-cmd-desc">${ds}</span></div>`
+  }).join("")
+}
+// 点击面板列表中的「预览」：在左侧预览该面板已保存的按钮
+function previewThisPanel(i){ activePreviewPanel=i; renderPanelPreview(); $("#panelPreview").classList.add("show") }
+// 格式化面板修改/创建时间（秒级或毫秒级时间戳均可）
+function fmtPanelTime(t){
+  if(t==null||t==="")return "—"
+  let ms = (typeof t==="number") ? (t<1e12 ? t*1000 : t) : (String(t).length<=10 ? Number(t)*1000 : Number(t))
+  const d=new Date(ms)
+  if(isNaN(d.getTime()))return String(t)
+  const p=n=>String(n).padStart(2,"0")
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+function setupPanelDrag(){
+  $$("#panelList .banner .handle").forEach(h=>{
+    h.addEventListener("dragstart",e=>{const b=h.closest(".banner");dragSrc=b;b.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain","")})
+    h.addEventListener("dragend",()=>{if(dragSrc)dragSrc.classList.remove("dragging");dragSrc=null;clearDropIndicator();$$(".banner.drag-over").forEach(b=>b.classList.remove("drag-over"))})
+  })
+  $$("#panelList .banner").forEach(b=>{
+    b.addEventListener("dragover",e=>{
+      e.preventDefault()
+      if(!dragSrc||dragSrc===b){clearDropIndicator();b.classList.remove("drag-over");return}
+      const m=computeDropMode(b,e.clientY)
+      if(m.mode==="insert"){b.classList.remove("drag-over");showDropIndicator(b,m.after)}
+      else{clearDropIndicator();b.classList.add("drag-over")}
+    })
+    b.addEventListener("dragleave",()=>{b.classList.remove("drag-over")})
+    b.addEventListener("drop",e=>{
+      e.preventDefault()
+      b.classList.remove("drag-over")
+      if(!dragSrc)return
+      const from=Number(dragSrc.dataset.pidx),to=Number(b.dataset.pidx)
+      const m=computeDropMode(b,e.clientY)
+      if(m.mode==="swap"){
+        if(from!==to){const t=panels[to];panels[to]=panels[from];panels[from]=t}
+      }else{
+        let insert=m.after?to+1:to
+        if(from<insert)insert-=1
+        if(insert<0)insert=0
+        reorderArr(panels,from,insert)
+      }
+      clearDropIndicator()
+      renderPanelList()
+    })
+  })
+}
+
+async function editPanelItem(i){
+  const p=panels[i];const pid=p.panel_id||p.id||"";currentPanelId=pid;panelEditIdx=i
+  const data=p,panel=data.panel||{}
+  // 列表接口通常不返回关联 openids，需调「查询面板详情」接口获取完整 openids
+  let detail=null
+  try{
+    const r=await fetch(getUrl("/panels/"+encodeURIComponent(pid))).then(x=>x.json())
+    if(r&&r.ok&&r.data)detail=r.data
+    else if(r&&(r.panel_id||r.scope||r.target_type))detail=r
+  }catch(e){/* 兜底用列表数据 */}
+  const src = Object.keys(detail).length?detail:data
+  const dPanel=src.panel||panel
+  const gIds=src.group_openids||[], uIds=src.user_openids||[]
+  panelEditor={scope:src.scope||data.scope||activePanelScope,target_type:src.target_type||data.target_type||"all",
+    groupOpenids:gIds.map(o=>({openid:o,found:false})),
+    userOpenids:uIds.map(o=>({openid:o,found:false})),
+    _origGroup:[...gIds],_origUser:[...uIds],
+    remark:String(dPanel.remark||""),items:Array.isArray(dPanel.items||dPanel.buttons)?(dPanel.items||dPanel.buttons).map(normalizePanelItem):[]}
+  // 从详情接口拿到的 openids 只是字符串列表，需逐个调 resolve-openid 补全昵称/头像
+  await Promise.all([
+    ...gIds.map((_,i)=>resolveOpenid("group",i)),
+    ...uIds.map((_,i)=>resolveOpenid("user",i)),
+  ])
+  $("#panel-modal-title").textContent="编辑指令面板"
+  $("#panel-modal-save").textContent="保存修改"
+  fillPanelEditor(true)
+}
+$("#panelAdd").addEventListener("click",()=>{
+  currentPanelId=null;panelEditIdx=-2
+  panelEditor={scope:activePanelScope,target_type:"all",groupOpenids:[],userOpenids:[],remark:"",items:[]}
+  $("#panel-modal-title").textContent="创建指令面板"
+  $("#panel-modal-save").textContent="创建"
+  fillPanelEditor(false)
+})
+function fillPanelEditor(isEdit){
+  ddSet("panel-f-scope",panelEditor.scope,isEdit)
+  ddSet("panel-f-target_type",panelEditor.target_type,false)
+  $("#panel-f-remark").value=panelEditor.remark
+  renderOpenidList("group");renderOpenidList("user")
+  syncPanelTargetUI();renderPanelItems();openModal("panel-modal")
+}
+// c2c / dm 范围不支持 only_admin；all 作用范围下 group/user_openids 不生效
+let supportOnlyAdmin=true
+function syncPanelTargetUI(){
+  const scope=ddVal("panel-f-scope")
+  panelEditor.scope=scope
+  panelEditor.target_type=ddVal("panel-f-target_type")
+  // only_admin 仅在 group / channel 范围生效
+  supportOnlyAdmin = !["c2c","dm"].includes(scope)
+  // channel / dm 场景只能 all：禁用 specific 选项
+  ddDisableOption("panel-f-target_type","specific",["channel","dm"].includes(scope))
+  // 作用范围（target_type）始终可改；缺失时默认 all
+  if(!panelEditor.target_type)panelEditor.target_type="all"
+  ddSet("panel-f-target_type",panelEditor.target_type,false)
+  // 关联对象仅在 target_type=specific 时生效，且按 scope 区分字段：
+  // c2c 场景只能填 user_openids；group 场景只能填 group_openids；channel/dm 只能 all（无此字段）
+  const showUser = panelEditor.target_type==="specific" && scope==="c2c"
+  const showGroup = panelEditor.target_type==="specific" && scope==="group"
+  $("#panel-f-user_openids-list").closest(".field").classList.toggle("hidden",!showUser)
+  $("#panel-f-group_openids-list").closest(".field").classList.toggle("hidden",!showGroup)
+  const hint=$("#ttHint")
+  if(hint)hint.textContent=""
+}
+function renderPanelItems(){
+  const box=$("#panelItemForm");$("#panelItemCount").textContent=panelEditor.items.length+" / 20 条指令"
+  const addBox=`<div class="add-box" onclick="addPanelItem()"><span>+</span> 新增指令</div>`
+  if(!panelEditor.items.length){box.innerHTML='<div class="empty">暂无指令，点击下方添加。</div>'+addBox;renderPanelPreview();return}
+  box.innerHTML=panelEditor.items.map((x,i)=>{
+    const typeTxt=x.type==="link"?"link 链接":"command 指令"
+    const tag=x.type==="link"?'<span class="tag">链接</span>':'<span class="tag tag-cmd">指令</span>'
+    const admin=supportOnlyAdmin&&x.only_admin?'<span class="tag tag-admin">仅管理员</span>':""
+    const ds=x.desc?esc(x.desc):'<span style="color:var(--text2)">（无描述）</span>'
+    return `<div class="banner" data-pi="${i}">
+      <div class="handle" draggable="true" title="拖动排序">⋮⋮</div>
+      <div class="icon">${x.type==="link"?"🔗":"⌨️"}</div>
+      <div class="meta"><div class="name">${x.name?esc(x.name):'<span style="color:var(--text2)">未命名</span>'} ${tag}${admin}</div><div class="sub">${ds}</div></div>
+      <div class="acts"><button class="btn sm ghost" onclick="editPanelCmd(${i})">编辑</button><button class="btn sm danger" onclick="removePanelItem(${i})">删除</button></div>
+    </div>`
+  }).join("")+addBox
+  setupPanelItemDrag()
+  renderPanelPreview()
+}
+// 面板指令横幅拖动排序
+function setupPanelItemDrag(){
+  const box=$("#panelItemForm")
+  $$("#panelItemForm .banner .handle").forEach(h=>{
+    h.addEventListener("dragstart",e=>{const b=h.closest(".banner");dragSrc=b;b.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain","")})
+    h.addEventListener("dragend",()=>{if(dragSrc)dragSrc.classList.remove("dragging");dragSrc=null;clearDropIndicator();$$(".banner.drag-over").forEach(b=>b.classList.remove("drag-over"))})
+  })
+  $$("#panelItemForm .banner").forEach(b=>{
+    b.addEventListener("dragover",e=>{
+      e.preventDefault()
+      if(!dragSrc||dragSrc===b){clearDropIndicator();b.classList.remove("drag-over");return}
+      const m=computeDropMode(b,e.clientY)
+      if(m.mode==="insert"){b.classList.remove("drag-over");showDropIndicator(b,m.after)}
+      else{clearDropIndicator();b.classList.add("drag-over")}
+    })
+    b.addEventListener("dragleave",()=>{b.classList.remove("drag-over")})
+    b.addEventListener("drop",e=>{
+      e.preventDefault()
+      b.classList.remove("drag-over")
+      if(!dragSrc)return
+      const from=Number(dragSrc.dataset.pi),to=Number(b.dataset.pi)
+      const m=computeDropMode(b,e.clientY)
+      if(m.mode==="swap"){
+        if(from!==to){const t=panelEditor.items[to];panelEditor.items[to]=panelEditor.items[from];panelEditor.items[from]=t}
+      }else{
+        let insert=m.after?to+1:to
+        if(from<insert)insert-=1
+        if(insert<0)insert=0
+        reorderArr(panelEditor.items,from,insert)
+      }
+      clearDropIndicator()
+      renderPanelItems();renderPanelPreview()
+    })
+  })
+}
+
+/* ===== 自定义下拉组件 ===== */
+// 展开/收起：事件委托到 document，点击 .dd-val 切换；点击外部关闭
+document.addEventListener("click",e=>{
+  const dd=e.target.closest(".dd")
+  if(dd){if(e.target.closest(".dd-val")){if(dd.classList.contains("disabled"))return;closeAllDD(dd);dd.classList.toggle("open")}return}
+  closeAllDD(null)
+})
+// 键盘可达性
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape")closeAllDD(null)
+  const dd=document.activeElement&&document.activeElement.classList&&document.activeElement.classList.contains("dd")?document.activeElement:null
+  if(dd&&(e.key==="ArrowDown"||e.key==="Enter"||e.key===" ")){e.preventDefault();if(!dd.classList.contains("open")){closeAllDD(dd);dd.classList.add("open")}}
+})
+function closeAllDD(except){
+  $$(".dd.open").forEach(d=>{if(d!==except)d.classList.remove("open")})
+}
+// 初始化一个 .dd：绑定选项点击
+function initDD(dd){
+  if(dd._ddReady)return;dd._ddReady=true
+  const list=dd.querySelector(".dd-list")
+  list.addEventListener("click",e=>{
+    const li=e.target.closest("li");if(!li||li.classList.contains("disabled"))return
+    const v=li.dataset.v
+    ddSet(dd,v,dd.classList.contains("disabled"))
+    dd.classList.remove("open")
+    dd.dispatchEvent(new Event("dd-change"))
+  })
+}
+// 设置值（el: 元素或 id；v: 值；disabled: 是否禁用，true 禁用 / 缺省或 false 启用）
+function ddSet(el,v,disabled){
+  const dd=typeof el==="string"?$("#"+el):el
+  initDD(dd)
+  dd.dataset.val=v
+  if(disabled)dd.classList.add("disabled");else dd.classList.remove("disabled")
+  const li=dd.querySelector('.dd-list li[data-v="'+CSS.escape(v)+'"]')
+  dd.querySelector(".dd-text").textContent=li?li.textContent:v
+  dd.querySelectorAll(".dd-list li").forEach(o=>o.classList.toggle("sel",o.dataset.v===v))
+}
+// 取值
+function ddVal(el){
+  const dd=typeof el==="string"?$("#"+el):el
+  return dd.dataset.val
+}
+// 禁用某个选项（li[data-v]）
+function ddDisableOption(id,v,disabled){
+  const dd=$("#"+id);if(!dd)return
+  const li=dd.querySelector('.dd-list li[data-v="'+CSS.escape(v)+'"]')
+  if(li)li.classList.toggle("disabled",disabled)
+  // 若当前选中项被禁用，回退到首个可用项
+  if(disabled&&dd.dataset.val===v){const first=dd.querySelector(".dd-list li:not(.disabled)");if(first)ddSet(dd,first.dataset.v,false)}
+}
+// 初始化静态下拉
+initDD($("#panel-f-scope"));initDD($("#panel-f-target_type"))
+initDD($("#panel-i-type"))
+$("#panel-i-type").addEventListener("dd-change",syncItemLink)
+function addPanelItem(){if(panelEditor.items.length>=20){toast("最多 20 条指令",true);return}panelEditor.items.push({name:"",desc:"",type:"command",only_admin:false,link:""});editPanelCmd(panelEditor.items.length-1)}
+function removePanelItem(i){
+  panelEditor.items.splice(i,1);renderPanelItems();renderPanelPreview()
+}
+$("#panel-f-scope").addEventListener("dd-change",()=>{syncPanelTargetUI();renderPanelPreview()})
+$("#panel-f-target_type").addEventListener("dd-change",syncPanelTargetUI)
+// ===== 单条指令编辑弹窗 =====
+let editItemIdx=-1
+function editPanelCmd(i){
+  editItemIdx=i
+  const x=panelEditor.items[i]||{name:"",desc:"",type:"command",only_admin:false,link:""}
+  $("#panel-item-modal-title").textContent="编辑指令"
+  $("#panel-i-name").value=x.name||""
+  $("#panel-i-desc").value=x.desc||""
+  $("#panel-i-link").value=x.type==="link"?x.link||"":""
+  // only_admin 仅在 group / channel 范围生效
+  const adminField=$("#panel-i-admin-field")
+  if(supportOnlyAdmin){adminField.classList.remove("hidden");$("#panel-i-admin").checked=!!x.only_admin}else{adminField.classList.add("hidden");$("#panel-i-admin").checked=false}
+  ddSet("panel-i-type",x.type||"command",false)
+  syncItemLink()
+  openModal("panel-item-modal")
+}
+function syncItemLink(){
+  const isLink=ddVal("panel-i-type")==="link"
+  $("#panel-i-link-field").classList.toggle("hidden",!isLink)
+}
+function savePanelItem(){
+  const x=panelEditor.items[editItemIdx];if(!x)return
+  x.name=$("#panel-i-name").value.trim()
+  x.desc=$("#panel-i-desc").value.trim()
+  x.type=ddVal("panel-i-type")
+  x.link=x.type==="link"?$("#panel-i-link").value.trim():""
+  x.only_admin=supportOnlyAdmin?$("#panel-i-admin").checked:false
+  if(!x.name){toast("指令名称不能为空",true);return}
+  if(x.type==="link"&&!x.link.startsWith("https://")){toast("link 必须 https:// 开头",true);return}
+  closeModal("panel-item-modal")
+  renderPanelItems();renderPanelPreview()
+}
+
+async function submitPanel(){
+  panelEditor.scope=ddVal("panel-f-scope")||activePanelScope
+  panelEditor.target_type=ddVal("panel-f-target_type")
+  panelEditor.remark=$("#panel-f-remark").value
+  // 从对象数组提取 openid 字符串列表
+  const gIds=panelEditor.groupOpenids.map(x=>x.openid)
+  const uIds=panelEditor.userOpenids.map(x=>x.openid)
+  // 按文档约束过滤 openids：all 场景或 channel/dm 场景不传；specific 时 only 与 scope 匹配的那个字段
+  const scope=panelEditor.scope
+  let finalG=[],finalU=[]
+  if(panelEditor.target_type==="specific"&&scope!=="channel"&&scope!=="dm"){
+    if(scope==="c2c")finalU=uIds
+    else if(scope==="group")finalG=gIds
+  }
+  panelEditor.groupOpenids=panelEditor.groupOpenids; // 保持对象数组供下次打开
+  for(let i=0;i<panelEditor.items.length;i++){const x=panelEditor.items[i];if(!x.name){toast("第 "+(i+1)+" 条指令名称不能为空",true);return}if(x.type==="link"&&!x.link.startsWith("https://")){toast("第 "+(i+1)+" 条指令 link 必须 https://",true);return}}
+  if(panelEditor.remark.length>255){toast("remark 最多 255 字符",true);return}
+  const payload={items:panelEditor.items.map(x=>{const o={type:x.type,name:x.name,desc:x.desc,only_admin:!supportOnlyAdmin?false:!!x.only_admin};if(x.type==="link")o.link=x.link;return o}),remark:panelEditor.remark||""}
+  // 构建创建请求体：仅携带与 scope 匹配的 openids 字段，避免传无效字段被后端拒绝
+  const createBody={scope:panelEditor.scope,target_type:panelEditor.target_type,panel:payload}
+  if(panelEditor.target_type==="specific"){
+    if(scope==="c2c")createBody.user_openids=finalU
+    else if(scope==="group")createBody.group_openids=finalG
+  }
+  setBusy(true)
+  try{
+    let r,d
+    if(currentPanelId){
+      r=await fetch(API+"/panels/"+encodeURIComponent(currentPanelId),{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(withSelfId({panel:payload}))})
+    }else{
+      r=await fetch(API+"/panels",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(withSelfId(createBody))})
+    }
+    d=await r.json();if(!d.ok){toast(d.error,true);return}
+    // 编辑态：通过「修改关联对象」接口同步 openids 差异（详情接口才返回关联，列表不返回）
+    if(currentPanelId)await syncPanelTargetOnEdit(currentPanelId)
+    toast(currentPanelId?"面板已修改":"面板已创建");closeModal("panel-modal");loadPanels()
+  }catch(e){toast("保存失败："+e.message,true)}finally{setBusy(false)}
+}
+// ===== openid 选择器（用户/群）=====
+let oidKind="user",oidEditIdx=-1
+function oidArr(kind){return kind==="group"?panelEditor.groupOpenids:panelEditor.userOpenids}
+function renderOpenidList(kind){
+  const box=$("#panel-f-"+(kind==="group"?"group":"user")+"_openids-list")
+  if(!box)return
+  const list=oidArr(kind)
+  if(!list.length){box.innerHTML='<div class="empty">暂无，点击下方添加</div>';return}
+  box.innerHTML=list.map((it,i)=>{
+    const avatar=it.avatar
+      ? `<img class="oid-avatar" src="${esc(it.avatar)}" onerror="this.outerHTML='<div class=&quot;oid-avatar oid-letter&quot;>${esc((it.openid||'?').charAt(0).toUpperCase())}</div>'">`
+      : `<div class="oid-avatar oid-letter">${esc((it.openid||"?").charAt(0).toUpperCase())}</div>`
+    const name=it.nickname||it.openid
+    const sub=it.found===false?"":it.openid
+    const notFound=it.found===false?`<div class="hint danger" style="margin:4px 0 2px">未找到当前输入的${kind==="group"?"群":"用户"}信息，请确保 openid 正确</div>`:""
+    return `<div class="banner oid-banner">${avatar}<div class="meta"><div class="name">${esc(name)}</div>${sub?`<div class="sub">${esc(sub)}</div>`:""}</div><div class="acts"><button class="btn sm ghost" onclick="editOpenid('${kind}',${i})">编辑</button><button class="btn sm danger" onclick="removeOpenid('${kind}',${i})">删除</button></div></div>${notFound}`
+  }).join("")
+}
+function openAddOpenid(kind){oidKind=kind;oidEditIdx=-1;$("#oid-modal-title").textContent=kind==="group"?"添加群聊":"添加用户";$("#oid-input").value="";$("#oid-input").placeholder=kind==="group"?"请输入群聊 openid":"请输入用户 openid";$("#oid-hint").textContent="输入用户或群的 openid，确定后会自动拉取昵称/头像";openModal("oid-modal");setTimeout(()=>$("#oid-input").focus(),50)}
+async function confirmOpenid(){
+  const v=$("#oid-input").value.trim();if(!v){toast("请输入 openid",true);return}
+  closeModal("oid-modal")
+  const kind=oidKind
+  const arr=oidArr(kind)
+  if(oidEditIdx>=0){arr[oidEditIdx]={openid:v,found:false};await resolveOpenid(kind,oidEditIdx)}
+  else{
+    if(arr.some(x=>x.openid===v)){toast("该 openid 已添加",true);renderOpenidList(kind);return}
+    arr.push({openid:v,found:false});await resolveOpenid(kind,arr.length-1)
+  }
+  renderOpenidList(kind)
+}
+async function resolveOpenid(kind,idx){
+  const arr=oidArr(kind);const it=arr[idx];if(!it)return
+  try{
+    const r=await fetch(`${API}/resolve-openid?openid=${encodeURIComponent(it.openid)}&kind=${kind}`).then(x=>x.json())
+    if(r&&r.ok&&r.found){arr[idx]={openid:it.openid,nickname:r.nickname||"",avatar:r.avatar||"",found:true}}
+    else{arr[idx]={openid:it.openid,found:false}}
+  }catch(e){arr[idx]={openid:it.openid,found:false}}
+}
+function editOpenid(kind,i){oidKind=kind;oidEditIdx=i;const it=oidArr(kind)[i];$("#oid-modal-title").textContent=kind==="group"?"编辑群聊":"编辑用户";$("#oid-input").value=it.openid;$("#oid-hint").textContent="修改 openid 后确定会重新拉取信息";openModal("oid-modal");setTimeout(()=>$("#oid-input").focus(),50)}
+function removeOpenid(kind,i){oidArr(kind).splice(i,1);renderOpenidList(kind)}
+// 编辑保存后，按 scope 把 openids 的增删差异同步到「修改关联对象」接口
+async function syncPanelTargetOnEdit(pid){
+  const scope=panelEditor.scope
+  const origG=panelEditor._origGroup||[],origU=panelEditor._origUser||[]
+  const curG=panelEditor.groupOpenids.map(x=>x.openid),curU=panelEditor.userOpenids.map(x=>x.openid)
+  const diff=(a,b)=>({add:a.filter(x=>!b.includes(x)),del:b.filter(x=>!a.includes(x))})
+  const g=diff(curG,origG),u=diff(curU,origU)
+  // 按文档：仅 c2c 用 user，仅 group 用 group
+  const adds=[],dels=[]
+  if(scope==="c2c"){if(u.add.length)adds.push(["user",u.add]);if(u.del.length)dels.push(["user",u.del])}
+  else if(scope==="group"){if(g.add.length)adds.push(["group",g.add]);if(g.del.length)dels.push(["group",g.del])}
+  async function callOp(op,kind,ids){
+    const body={op,user_openids:kind==="user"?ids:[],group_openids:kind==="group"?ids:[]}
+    const r=await fetch(API+"/panels/"+encodeURIComponent(pid)+"/target",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(withSelfId(body))})
+    const d=await r.json();if(!d.ok)throw new Error(d.error||"关联同步失败")
+  }
+  for(const [k,ids] of adds)await callOp("add",k,ids)
+  for(const [k,ids] of dels)await callOp("del",k,ids)
+}
+async function deletePanelItem(i){
+  const pid=panels[i].panel_id||panels[i].id||""
+  if(!confirm("确定删除面板 "+pid+" 吗？"))return
+  setBusy(true)
+  try{const r=await fetch(getUrl("/panels/"+encodeURIComponent(pid)),{method:"DELETE"});const d=await r.json();if(!d.ok){toast(d.error,true);return}toast("面板已删除");loadPanels()}
+  catch(e){toast("删除失败："+e.message,true)}finally{setBusy(false)}
+}
+function openTargetEdit(pid){currentTargetId=pid;$("#target-f-op").value="add";$("#target-f-group_openids").value="";$("#target-f-user_openids").value="";openModal("target-modal")}
+async function submitTarget(){
+  const op=$("#target-f-op").value,group_openids=parseList($("#target-f-group_openids").value),user_openids=parseList($("#target-f-user_openids").value)
+  setBusy(true)
+  try{const r=await fetch(API+"/panels/"+encodeURIComponent(currentTargetId)+"/target",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(withSelfId({op,user_openids,group_openids}))});const d=await r.json();if(!d.ok){toast(d.error,true);return}toast("关联对象已更新");closeModal("target-modal")}
+  catch(e){toast("操作失败："+e.message,true)}finally{setBusy(false)}
+}
+
+/* ===== 启动 ===== */
+loadMenu()
+loadCurrentBot()
+</script>
+</body>
+</html>
