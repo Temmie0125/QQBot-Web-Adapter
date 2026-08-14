@@ -13,7 +13,7 @@
   --shadow-lg:0 10px 30px rgba(20,24,40,.10);
 }
 *{box-sizing:border-box}
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 
 .topbar{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;height:58px;padding:0 26px;background:rgba(255,255,255,.86);backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--border)}
 .topbar-title{font-size:17px;font-weight:700;letter-spacing:.2px}
@@ -49,8 +49,12 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 .section-title{font-size:15px;font-weight:700;margin-bottom:14px}
 .hint{font-size:12px;color:var(--text2);line-height:1.6}
 
-.split{display:grid;grid-template-columns:420px 1fr;gap:18px;align-items:start}
-@media (max-width:900px){.split{grid-template-columns:1fr}}
+.split{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
+.split>.section{flex:1 1 360px;min-width:0;max-width:100%}
+.split>.section:first-child{flex:0 1 420px}
+@media (max-width:760px){.split{flex-direction:column}.split>.section{flex:1 1 auto;width:100%}}
+/* 手机端：指令面板页 phone 的 foot 少了菜单栏那一行，给 phone-body 补足该段高度，使两页 phone 视觉等高、下方不留空白；桌面端 phone 本就撑满，不受影响 */
+@media (max-width:900px){#page-panel .phone-body{min-height:176px}}
 
 /* 手机预览 */
 .phone{border:1px solid var(--border);border-radius:22px;overflow:visible;background:#eef0f4;box-shadow:var(--shadow-lg);position:relative}
@@ -107,7 +111,7 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 /* 开关开启：胶囊微微变蓝 + 蓝点 */
 .qq-menu-btn.on{border-color:rgba(79,110,247,.5);background:#f5f7ff;color:var(--accent)}
 #subPops{display:contents}
-.qq-sub-pop{position:absolute;left:8px;right:8px;bottom:calc(100% + 8px);top:auto;background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);padding:12px 12px 6px;display:none;max-height:calc(100vh - 200px);overflow:auto;z-index:40}
+.qq-sub-pop{position:absolute;left:8px;right:8px;bottom:calc(100% + 8px);top:auto;background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);padding:12px 12px 6px;display:none;overflow:auto;z-index:40}
 .qq-sub-pop.show{display:block;animation:pop2 .16s ease}
 .qq-sub-head{display:flex;align-items:center;gap:8px;padding:8px 12px 6px;font-weight:700;font-size:14px;color:#1f2430}
 .qq-sub-head img{width:18px;height:18px;object-fit:contain}
@@ -116,8 +120,8 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 .qq-sub-item img{width:16px;height:16px;object-fit:contain;flex-shrink:0}
 .qq-sub-item span{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
 .qq-sub-item:hover{background:var(--accent-weak);color:var(--accent)}
-/* 面板预览浮层：从输入框上方延伸至顶部栏下方；指令少则只延伸必要高度 */
-.qq-panel{position:absolute;left:8px;right:8px;bottom:calc(100% + 8px);top:auto;background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);padding:12px 12px 6px;display:none;max-height:calc(100vh - 200px);overflow:auto;z-index:25}
+/* 面板预览浮层：底部贴 foot 顶上方(bottom:calc(100% + 8px))，绝不遮输入框；顶部上限由 JS 按 phone 实际高度计算并写入 max-height，停在 .phone-bar 下方一段距离 */
+.qq-panel{position:absolute;left:8px;right:8px;bottom:calc(100% + 8px);top:auto;background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);padding:12px 12px 6px;display:none;overflow:auto;z-index:25}
 .qq-panel.show{display:block;animation:pop2 .16s ease}
 @keyframes pop2{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .qq-panel-head{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:700;color:#1f2430;padding:2px 4px 10px}
@@ -151,7 +155,7 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 
 /* 内联编辑表单 */
 .edit-form{padding:16px 16px 14px;border:1px solid var(--accent);border-radius:14px;background:linear-gradient(180deg,#fbfcff,#f7f9ff);margin-bottom:12px;box-shadow:0 6px 18px rgba(79,110,247,.10)}
-.edit-form .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.edit-form .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 .edit-form .field.full{grid-column:1/-1}
 .edit-form .field{margin-bottom:12px}
 .edit-form label{display:block;font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:500}
@@ -249,7 +253,8 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 .loading{opacity:.6;pointer-events:none}
 .hidden{display:none !important}
 .empty{font-size:13px;color:var(--text2);padding:6px 2px}
-@media (max-width:720px){.content{padding:16px}.topbar{padding:0 16px}.modal-overlay{padding:8px}.modal{width:auto}}
+@media (max-width:720px){.content{padding:16px}.topbar{padding:0 16px}.modal-overlay{padding:8px}.modal{width:auto}.edit-form .grid{grid-template-columns:1fr}.section{padding:18px 16px}}
+@media (max-width:480px){.content{padding:12px}.section{padding:16px 14px}.banner{gap:8px;padding:10px 12px}}
 </style>
 </head>
 <body>
@@ -368,7 +373,7 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
     </div>
     <div class="edit-form">
       <div class="grid">
-        <div class="field"><label>生效范围 scope（创建后不可改）</label>
+        <div class="field"><label>生效范围 scope</label>
           <div class="dd" id="panel-f-scope" tabindex="0">
             <div class="dd-val"><span class="dd-text"></span><span class="dd-arrow"></span></div>
             <ul class="dd-list">
@@ -611,11 +616,16 @@ $("#menuPreview").addEventListener("click",e=>{
   if(!pop)return
   const show=!pop.classList.contains("show")
   $$(".qq-sub-pop.show").forEach(p=>p.classList.remove("show"))
-  if(show)pop.classList.add("show")
+  if(show){fitPopup(pop);pop.classList.add("show")}
 })
 document.addEventListener("click",e=>{
   if(!e.target.closest(".qq-menu-bar"))$$(".qq-sub-pop.show").forEach(p=>p.classList.remove("show"))
   if(!e.target.closest(".qq-panel")&&!e.target.closest("[onclick^=\"previewThisPanel\"]"))$("#panelPreview").classList.remove("show")
+})
+// 窗口尺寸变化时，重新按 phone 高度约束已显示的弹窗（如手机旋转）
+window.addEventListener("resize",()=>{
+  const p=$("#panelPreview"); if(p.classList.contains("show"))fitPopup(p)
+  $$(".qq-sub-pop.show").forEach(p=>fitPopup(p))
 })
 
 function menuEditHtml(idx,overrideType){
@@ -969,8 +979,20 @@ function renderPanelPreview(){
     return `<div class="qq-cmd"><span class="qq-cmd-name">${nm}</span><span class="qq-cmd-desc">${ds}</span></div>`
   }).join("")
 }
+// 打开弹窗前，按 phone 实际高度计算 max-height：底部贴 foot 顶上方（CSS 已定），
+// 顶部最高停在 .phone-bar 下方一段距离(gap)，绝不越过顶部栏，指令多则内部滚动
+function fitPopup(el){
+  const phone=el.closest(".phone")
+  const foot=el.closest(".phone-foot")
+  const bar=phone && phone.querySelector(".phone-bar")
+  if(!phone||!foot||!bar)return
+  const gap=16 // 顶部距 .phone-bar 下方的额外间距
+  // 弹窗从 foot 顶往上长，可用高度 = phone 高 − 顶部栏高 − foot 高 − 顶部间距
+  const maxH=phone.clientHeight - bar.offsetHeight - foot.offsetHeight - gap
+  el.style.maxHeight=(maxH>80?maxH:80)+"px"
+}
 // 点击面板列表中的「预览」：在左侧预览该面板已保存的按钮
-function previewThisPanel(i){ activePreviewPanel=i; renderPanelPreview(); $("#panelPreview").classList.add("show") }
+function previewThisPanel(i){ activePreviewPanel=i; renderPanelPreview(); const p=$("#panelPreview"); fitPopup(p); p.classList.add("show") }
 // 格式化面板修改/创建时间（秒级或毫秒级时间戳均可）
 function fmtPanelTime(t){
   if(t==null||t==="")return "—"

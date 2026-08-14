@@ -1175,7 +1175,8 @@ function renderGroupList() {
     state._pendingGroupRefresh = true
     setTimeout(() => {
       state._pendingGroupRefresh = false
-      if (state.currentView === "messages") loadGroups()
+      // 仅当当前正在查看群聊时才自动刷新，避免选中私聊时被拉回群列表
+      if (state.currentView === "messages" && state.chatType === "group") loadGroups()
     }, 2000)
   }
 }
