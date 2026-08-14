@@ -1342,6 +1342,15 @@ async function submitTarget(){
 /* ===== 启动 ===== */
 loadMenu()
 loadCurrentBot()
+
+// 监听主页面（左上角）切换 Bot：收到后同步刷新当前 Bot 信息与菜单/面板数据
+window.addEventListener("message", e=>{
+  const d=e.data
+  if(!d||d.type!=="bot-changed")return
+  loadCurrentBot()
+  if(currentMode==="menu")loadMenu()
+  else loadPanels()
+})
 </script>
 </body>
 </html>

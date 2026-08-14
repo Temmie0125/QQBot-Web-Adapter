@@ -685,6 +685,16 @@ async function selectBot(botId) {
       loadGroups()
     }
   }
+
+  // 向所有已挂载的自定义页面 iframe 广播 Bot 切换，便于其同步刷新数据（如菜单与面板）
+  broadcastToWebPages({ type: "bot-changed", selfId: botId })
+}
+
+// 向所有自定义页面 iframe 发送消息（iframe 自行决定刷新与否）
+function broadcastToWebPages(msg) {
+  $$(".web-page-iframe").forEach(iframe => {
+    try { iframe.contentWindow && iframe.contentWindow.postMessage(msg, "*") } catch (e) {}
+  })
 }
 
 // ===== 仪表盘 =====

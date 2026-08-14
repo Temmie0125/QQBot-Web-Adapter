@@ -343,3 +343,27 @@ export function init(ctx) {
 
 > 前端（iframe 页面）直接 `fetch` `GET /<basePath>/api/bot/current` 即可拿到同样的信息，
 > 无需把 selfId 写死在前端。
+
+### 监听 Bot 切换广播（自动同步）
+
+当控制台主页左上角切换 Bot 时，主页面会通过 `postMessage` 向**所有已挂载的自定义页面 iframe**
+广播一条 `{ type: "bot-changed", selfId }` 消息。你的 iframe 页面只要监听该消息，就能在用户切换
+Bot 时自动刷新自身数据，无需轮询：
+
+```js
+// 你的 iframe 页面（如 dash.js）
+window.addEventListener("message", (e) => {
+  const d = e.data
+  if (!d || d.type !== "bot-changed") return
+  const selfId = d.selfId // 新选中的 Bot 的 selfId
+  // 重新拉取该 Bot 下的数据并刷新页面
+  loadData(selfId)
+})
+```
+
+加上这一小段后，切换 Bot 时你的页面会与菜单 / 面板页一样自动同步，体验一致。
+
+> **注意（html 注入模式）**：上述广播只发给 `.web-page-iframe`（即 `src` 模式的 iframe 页面）。
+> 若你的自定义页面使用 `html` 直接注入模式（没有独立 iframe），它<b>收不到</b> `bot-changed` 消息。
+> html 模式页面可在切换时改为直接读取 `GET /<basePath>/api/bot/current` 获取最新选中 Bot，或
+> 主动轮询该接口来感知变化。
