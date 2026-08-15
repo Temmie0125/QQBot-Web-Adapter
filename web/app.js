@@ -6221,8 +6221,8 @@ function handleGroupNameUpdated(groupId, groupName) {
       nameEl.textContent = note || groupName
     }
   }
-  // 刷新侧边栏群列表（含搜索过滤/置顶顺序不变）
-  renderGroupList()
+  // 仅在查看群聊时刷新侧边栏群列表；私聊时不重渲，避免群名推送干扰当前视图（含自动刷新定时器）
+  if (state.chatType === "group") renderGroupList()
 }
 
 function handleWsMessage(data) {
