@@ -697,7 +697,13 @@ async function qrCreateBindTask() {
       signal: ctrl.signal,
     })
     clearTimeout(timer)
-    const json = await res.json()
+    if (!res.ok) throw new Error(`创建绑定任务失败(HTTP ${res.status})`)
+    let json
+    try {
+      json = await res.json()
+    } catch {
+      throw new Error("创建绑定任务失败：接口返回非 JSON（可能被网络/代理拦截）")
+    }
     if (json.retcode !== 0) throw new Error(json.msg || "创建绑定任务失败")
     return { taskId: json.data.task_id, key }
   } catch (err) {
@@ -710,7 +716,15 @@ async function qrPollBindResult(taskId) {
   const res = await fetch(`https://${QR_PORTAL_HOST}${QR_POLL_PATH}`, {
     method: "POST", headers: QR_HEADERS, body: JSON.stringify({ task_id: taskId }),
   })
-  const json = await res.json()
+  // 网络/代理可能返回非 JSON（HTML 错误页等），直接解析会抛 SyntaxError 导致 500；
+  // 这里做容错：非 2xx 或非 JSON 一律当作 waiting，前端继续轮询，不中断扫码流程
+  if (!res.ok) return { status: "waiting" }
+  let json
+  try {
+    json = await res.json()
+  } catch {
+    return { status: "waiting" }
+  }
   if (json.retcode !== 0) return { status: "waiting" }
   if (json.data.status === 2) return { status: "ok", data: json.data }
   if (json.data.status === 3) return { status: "timeout" }
@@ -727,9 +741,19 @@ function qrDecryptSecret(cipherBase64, keyBase64) {
 }
 
 async function qrGetRobotUin(appId) {
-  const res = await fetch(`${QR_SHARE_INFO_URL}?bkn=${QR_BKN}&robot_appid=${appId}`)
-  const json = await res.json()
-  return json?.data?.robot_data?.robot_uin
+  try {
+    const res = await fetch(`${QR_SHARE_INFO_URL}?bkn=${QR_BKN}&robot_appid=${appId}`, {
+      method: "GET", headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36'
+      }
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    return json?.data?.robot_data?.robot_uin
+  } catch {
+    // 接口返回非 JSON（被网络/代理拦截）时容错，交由上层提示
+    return null
+  }
 }
 
 // 读取 QQBot 配置
@@ -4825,6 +4849,7 @@ Bot.express.post(`${WEB_BASE}/api/bot/add-qr-poll`, async (req, res) => {
     const { uin: uinStr, appid, existed } = await saveAndConnectBot(uin, result.data.bot_appid, secret, "1", "0")
     res.json({ status: "ok", uin: uinStr, appid, existed })
   } catch (err) {
+    logger.error("[QQBot-Web] add-qr-poll 失败:", err)
     res.status(500).json({ error: String(err) })
   }
 })
@@ -4847,6 +4872,7 @@ Bot.express.post(`${WEB_BASE}/api/bot/add-by-appid`, async (req, res) => {
     const result = await saveAndConnectBot(uin, appid, secret, connMode, pdFlag)
     res.json({ ok: true, ...result })
   } catch (err) {
+    logger.error("[QQBot-Web] add-by-appid 失败:", err)
     res.status(500).json({ error: String(err) })
   }
 })
