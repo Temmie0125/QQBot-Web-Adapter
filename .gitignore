@@ -3,3 +3,5 @@ config/config.yaml
 
 # 依赖
 node_modules/
+
+data/

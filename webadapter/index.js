@@ -4,6 +4,8 @@
  */
 
 import * as menuPanel from "../../QQBot-Plugin/lib/menuPanel.js"
+import fs from "node:fs"
+import path from "node:path"
 
 export function init(ctx) {
   // ====== 页面注册 ======
@@ -163,6 +165,144 @@ export function init(ctx) {
   // 当前选中的 Bot 由主页面 selectBot 上报并存于进程内存，接口直接读取，前端无需传递 selfId
   const selfIdOf = () => Bot.webAdapter.getSelectedSelfId()
 
+  // ====== 菜单 / 面板备份（本地 JSON，目录 data/menu、data/panel）======
+  const BK_DIR = path.join(ctx.pluginDir, "data")
+  const BK_MENU_DIR = path.join(BK_DIR, "menu")
+  const BK_PANEL_DIR = path.join(BK_DIR, "panel")
+  const BK_CFG_FILE = path.join(BK_DIR, "backup-config.json")
+  const BK_LIMIT = 50 // 每类最多保留 50 条，超出删除最旧
+  const BK_KINDS = new Set(["menu", "panel"]) // 备份类型白名单
+  // 备份文件名白名单：首字符为字母/数字，仅含 [A-Za-z0-9_.-]，必须以 .json 结尾，总长 ≤ 80
+  // 天然排除路径分隔符（/ \）、盘符冒号、.. 前缀等，杜绝目录穿越
+  const BK_FILE_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,71}\.json$/
+  const BK_MAX_BYTES = 1024 * 1024 // 单条备份读取上限 1MB，防止超大文件拖垮接口
+
+  function bkEnsureDir(p) { try { if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true }) } catch { /* 忽略 */ } }
+  const bkDirOf = (kind) => kind === "menu" ? BK_MENU_DIR : BK_PANEL_DIR
+  // 安全解析备份文件绝对路径：类型白名单 + 文件名白名单 + 目录内校验 + 符号链接逃逸校验
+  // 返回安全的绝对路径；任一步不通过返回 null（文件不存在时仅做路径合法性校验，供删除区分"不存在"）
+  function bkSafeResolve(kind, file) {
+    if (!BK_KINDS.has(kind)) return null
+    if (typeof file !== "string" || !BK_FILE_RE.test(file)) return null
+    const dir = bkDirOf(kind)
+    const abs = path.resolve(dir, file)
+    // 兜底一：拼接结果必须位于基准目录内（防白名单以外的编码绕过）
+    const rel = path.relative(dir, abs)
+    if (rel.startsWith("..") || path.isAbsolute(rel)) return null
+    // 兜底二：真实路径（解析符号链接后）也必须在基准目录内，防止软链指向目录外文件
+    try {
+      const realDir = fs.realpathSync(dir)
+      if (fs.existsSync(abs)) {
+        const real = fs.realpathSync(abs)
+        const rrel = path.relative(realDir, real)
+        if (rrel.startsWith("..") || path.isAbsolute(rrel)) return null
+      }
+    } catch { return null }
+    return abs
+  }
+
+  function bkReadCfg() {
+    try { return JSON.parse(fs.readFileSync(BK_CFG_FILE, "utf8")) || {} } catch { return {} }
+  }
+  function bkWriteCfg(cfg) {
+    try { bkEnsureDir(BK_DIR); fs.writeFileSync(BK_CFG_FILE, JSON.stringify(cfg, null, 2)) } catch { /* 忽略 */ }
+  }
+  const bkEnabled = (kind) => { const c = bkReadCfg(); return kind === "menu" ? !!c.menuEnabled : !!c.panelEnabled }
+  function bkTimeStr() {
+    const d = new Date(), p = n => String(n).padStart(2, "0")
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  }
+  // 写备份：开关开启时把快照写入 JSON 文件，自动清理超出上限的旧备份（清理仅限白名单文件，软链不跟随）
+  function bkWrite(kind, data) {
+    try {
+      if (!BK_KINDS.has(kind) || !bkEnabled(kind)) return
+      const dir = bkDirOf(kind); bkEnsureDir(dir)
+      const file = `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.json`
+      fs.writeFileSync(path.join(dir, file), JSON.stringify({ type: kind, time: bkTimeStr(), data }, null, 2))
+      const files = fs.readdirSync(dir).filter(f => BK_FILE_RE.test(f)).sort()
+      while (files.length > BK_LIMIT) { const old = files.shift(); try { fs.unlinkSync(path.join(dir, old)) } catch { /* 忽略 */ } }
+    } catch (e) { ctx.logger?.error?.(`[QQBot-Web] ${kind} 备份写入失败:`, e) }
+  }
+  // 备份列表：每项含文件名、时间、内容摘要；仅读取文件头部解析，不加载整个文件
+  function bkList(kind) {
+    if (!BK_KINDS.has(kind)) return []
+    const dir = bkDirOf(kind); bkEnsureDir(dir)
+    let files = []
+    try { files = fs.readdirSync(dir) } catch { return [] }
+    return files.filter(f => BK_FILE_RE.test(f)).sort().reverse().map(f => {
+      const meta = { file: f }
+      try {
+        const fp = path.join(dir, f)
+        const size = fs.statSync(fp).size
+        if (size <= 0 || size > BK_MAX_BYTES) return meta
+        const head = Buffer.alloc(Math.min(size, 64 * 1024))
+        const fd = fs.openSync(fp, "r")
+        try { fs.readSync(fd, head, 0, head.length, 0) } finally { fs.closeSync(fd) }
+        const j = JSON.parse(head.toString("utf8"))
+        meta.time = j.time || ""
+        const d = j.data || {}
+        if (kind === "menu") meta.itemCount = (d.menu?.items || []).length
+        else { meta.itemCount = (d.panel?.items || d.panel?.buttons || []).length; meta.scope = d.scope || "" }
+      } catch { /* 单个损坏忽略 */ }
+      return meta
+    })
+  }
+  // 读单条备份（data 字段）：安全路径解析 + 文件大小限制
+  function bkRead(kind, file) {
+    const fp = bkSafeResolve(kind, file)
+    if (!fp) return null
+    try {
+      if (fs.statSync(fp).size > BK_MAX_BYTES) return null
+      return JSON.parse(fs.readFileSync(fp, "utf8"))
+    } catch { return null }
+  }
+  // 删除单条备份：安全路径解析（不存在时也能区分并返回"备份不存在"）
+  function bkDelete(kind, file) {
+    const fp = bkSafeResolve(kind, file)
+    if (!fp) return { ok: false, error: "非法文件名" }
+    try {
+      if (!fs.existsSync(fp)) return { ok: false, error: "备份不存在" }
+      fs.unlinkSync(fp); return { ok: true }
+    } catch (e) { return { ok: false, error: String(e?.message || e) } }
+  }
+
+  // 备份开关配置 GET/PUT /menu-panel/backup/config
+  Bot.webAdapter.registerApi("get", "/menu-panel/backup/config", (_req, res) => {
+    const c = bkReadCfg()
+    res.json({ ok: true, data: { menuEnabled: !!c.menuEnabled, panelEnabled: !!c.panelEnabled } })
+  })
+  Bot.webAdapter.registerApi("put", "/menu-panel/backup/config", (req, res) => {
+    const b = req.body || {}
+    bkWriteCfg({ menuEnabled: !!b.menuEnabled, panelEnabled: !!b.panelEnabled })
+    res.json({ ok: true, data: { menuEnabled: !!b.menuEnabled, panelEnabled: !!b.panelEnabled } })
+  })
+
+  // 菜单备份：列表 / 详情 / 删除
+  Bot.webAdapter.registerApi("get", "/menu-panel/backup/menu", (_req, res) => {
+    res.json({ ok: true, data: bkList("menu") })
+  })
+  Bot.webAdapter.registerApi("get", "/menu-panel/backup/menu/:file", (req, res) => {
+    const bk = bkRead("menu", req.params.file)
+    if (!bk) return res.json({ ok: false, error: "备份不存在或已损坏" })
+    res.json({ ok: true, data: bk.data, time: bk.time || "", file: req.params.file })
+  })
+  Bot.webAdapter.registerApi("delete", "/menu-panel/backup/menu/:file", (req, res) => {
+    res.json(bkDelete("menu", req.params.file))
+  })
+
+  // 面板备份：列表 / 详情 / 删除
+  Bot.webAdapter.registerApi("get", "/menu-panel/backup/panel", (_req, res) => {
+    res.json({ ok: true, data: bkList("panel") })
+  })
+  Bot.webAdapter.registerApi("get", "/menu-panel/backup/panel/:file", (req, res) => {
+    const bk = bkRead("panel", req.params.file)
+    if (!bk) return res.json({ ok: false, error: "备份不存在或已损坏" })
+    res.json({ ok: true, data: bk.data, time: bk.time || "", file: req.params.file })
+  })
+  Bot.webAdapter.registerApi("delete", "/menu-panel/backup/panel/:file", (req, res) => {
+    res.json(bkDelete("panel", req.params.file))
+  })
+
   // 查询全局自定义菜单 GET /menu-panel/menu
   Bot.webAdapter.registerApi("get", "/menu-panel/menu", async (_req, res) => {
     res.json(await menuPanel.getMenu(selfIdOf()))
@@ -170,7 +310,9 @@ export function init(ctx) {
 
   // 修改全局自定义菜单 PUT /menu-panel/menu  body: { menu }
   Bot.webAdapter.registerApi("put", "/menu-panel/menu", async (req, res) => {
-    res.json(await menuPanel.changeMenu(req.body?.menu, selfIdOf()))
+    const r = await menuPanel.changeMenu(req.body?.menu, selfIdOf())
+    if (r.ok) bkWrite("menu", { menu: req.body?.menu || {} })
+    res.json(r)
   })
 
   // 查询指令面板列表 GET /menu-panel/panels?scope=group
@@ -183,9 +325,17 @@ export function init(ctx) {
   // body: { scope, target_type, user_openids, group_openids, panel }
   Bot.webAdapter.registerApi("post", "/menu-panel/panels", async (req, res) => {
     const b = req.body || {}
-    res.json(await menuPanel.createPanels(
+    const r = await menuPanel.createPanels(
       b.scope, b.target_type, b.user_openids || [], b.group_openids || [], b.panel, selfIdOf()
-    ))
+    )
+    if (r.ok) {
+      bkWrite("panel", {
+        scope: b.scope, target_type: b.target_type || "all",
+        user_openids: b.user_openids || [], group_openids: b.group_openids || [],
+        panel: b.panel || {},
+      })
+    }
+    res.json(r)
   })
 
   // 查询指令面板详情 GET /menu-panel/panels/:id
@@ -195,12 +345,36 @@ export function init(ctx) {
 
   // 修改指令面板 PUT /menu-panel/panels/:id  body: { panel }
   Bot.webAdapter.registerApi("put", "/menu-panel/panels/:id", async (req, res) => {
-    res.json(await menuPanel.changePanel(req.params.id, req.body?.panel, selfIdOf()))
+    const r = await menuPanel.changePanel(req.params.id, req.body?.panel, selfIdOf())
+    if (r.ok) {
+      // 修改接口只传 panel 内容，需再查详情补齐 scope / target_type / openids 后备份
+      const detail = await menuPanel.getPanel(req.params.id, selfIdOf())
+      const d = detail?.ok && detail.data ? detail.data : {}
+      bkWrite("panel", {
+        scope: d.scope || "group", target_type: d.target_type || "all",
+        user_openids: d.user_openids || [], group_openids: d.group_openids || [],
+        panel: req.body?.panel || {},
+      })
+    }
+    res.json(r)
   })
 
   // 删除指令面板 DELETE /menu-panel/panels/:id
   Bot.webAdapter.registerApi("delete", "/menu-panel/panels/:id", async (req, res) => {
-    res.json(await menuPanel.deletePanel(req.params.id, selfIdOf()))
+    // 删除前先取详情，删成功后备一份，便于误删恢复
+    const detail = await menuPanel.getPanel(req.params.id, selfIdOf())
+    const r = await menuPanel.deletePanel(req.params.id, selfIdOf())
+    if (r.ok) {
+      const d = detail?.ok && detail.data ? detail.data : {}
+      if (d.panel) {
+        bkWrite("panel", {
+          scope: d.scope || "group", target_type: d.target_type || "all",
+          user_openids: d.user_openids || [], group_openids: d.group_openids || [],
+          panel: d.panel,
+        })
+      }
+    }
+    res.json(r)
   })
 
   // 修改指令面板关联对象 PUT /menu-panel/panels/:id/target

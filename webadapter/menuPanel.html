@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QQBot 菜单与面板</title>
+<title>菜单与面板</title>
 <style>
 :root{
   --accent:#4f6ef7; --accent-weak:#eef1fe; --accent-2:#3b56d4;
@@ -54,7 +54,12 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 .split>.section:first-child{flex:0 1 420px}
 @media (max-width:760px){.split{flex-direction:column}.split>.section{flex:1 1 auto;width:100%}}
 /* 手机端：指令面板页 phone 的 foot 少了菜单栏那一行，给 phone-body 补足该段高度，使两页 phone 视觉等高、下方不留空白；桌面端 phone 本就撑满，不受影响 */
-@media (max-width:900px){#page-panel .phone-body{min-height:176px}}
+@media (max-width:900px){
+  #page-panel .phone-body{min-height:176px}
+  /* 手机/窄屏：编辑弹窗 grid 强制单列并允许子项收缩，scope/target_type/openids 等字段铺满整行、不再横向溢出 */
+  .edit-form .grid{grid-template-columns:minmax(0,1fr)}
+  .modal{width:100%}
+}
 
 /* 手机预览 */
 .phone{border:1px solid var(--border);border-radius:22px;overflow:visible;background:#eef0f4;box-shadow:var(--shadow-lg);position:relative}
@@ -111,6 +116,14 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 /* 开关开启：胶囊微微变蓝 + 蓝点 */
 .qq-menu-btn.on{border-color:rgba(79,110,247,.5);background:#f5f7ff;color:var(--accent)}
 #subPops{display:contents}
+#bkSubPops{display:contents}
+/* 备份预览弹窗：屏幕高度足够时，手机模拟器撑满弹窗可用高度（内容区随之增高），屏幕矮则自然收缩 */
+#preview-modal .preview-scroll{display:flex;flex-direction:column}
+#preview-modal .bk-phone{flex:1 1 auto;width:100%;display:flex;flex-direction:column}
+#preview-modal .bk-phone .phone-bar,#preview-modal .bk-phone .phone-foot{flex-shrink:0}
+#preview-modal .bk-phone .phone-body{flex:1 1 auto;min-height:128px}
+#preview-modal #bkPanelPreview{max-height:min(55vh,420px)}
+#preview-modal #bkSubPops .qq-sub-pop{max-height:min(50vh,340px)}
 .qq-sub-pop{position:absolute;left:8px;right:8px;bottom:calc(100% + 8px);top:auto;background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);padding:12px 12px 6px;display:none;overflow:auto;z-index:40}
 .qq-sub-pop.show{display:block;animation:pop2 .16s ease}
 .qq-sub-head{display:flex;align-items:center;gap:8px;padding:8px 12px 6px;font-weight:700;font-size:14px;color:#1f2430}
@@ -155,7 +168,9 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 
 /* 内联编辑表单 */
 .edit-form{padding:16px 16px 14px;border:1px solid var(--accent);border-radius:14px;background:linear-gradient(180deg,#fbfcff,#f7f9ff);margin-bottom:12px;box-shadow:0 6px 18px rgba(79,110,247,.10)}
-.edit-form .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.edit-form .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:12px}
+/* grid 子项允许收缩到内容宽度以下，避免窄屏下字段撑宽弹窗 */
+.edit-form .grid>*{min-width:0}
 .edit-form .field.full{grid-column:1/-1}
 .edit-form .field{margin-bottom:12px}
 .edit-form label{display:block;font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:500}
@@ -185,6 +200,8 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 
 /* 关联对象字段：仅 target_type 非 all 时生效，all / 不支持的范围隐藏 */
 .target-fields.hidden{display:none}
+/* 关联对象字段独占整行，不与 scope / target_type 同排 */
+.edit-form .field.target-fields{grid-column:1/-1}
 /* 仅管理员：c2c / dm 范围不显示该选项 */
 .only-admin-field.hidden{display:none}
 
@@ -206,6 +223,17 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 .switch-toggle .knob::before{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(20,24,40,.25)}
 .switch-toggle input:checked+.knob{background:var(--accent)}
 .switch-toggle input:checked+.knob::before{transform:translateX(20px)}
+/* 备份 / 导入导出工具条 */
+.sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.bar-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bk-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;user-select:none;white-space:nowrap}
+.bk-toggle input{display:none}
+.bk-toggle .knob{position:relative;width:32px;height:18px;background:#d4d8e2;border-radius:999px;transition:.2s;flex-shrink:0}
+.bk-toggle .knob::before{content:"";position:absolute;left:3px;top:3px;width:12px;height:12px;background:#fff;border-radius:50%;transition:.2s}
+.bk-toggle input:checked+.knob{background:var(--accent)}
+.bk-toggle input:checked+.knob::before{transform:translateX(14px)}
+/* 面板列表操作按钮较多，允许换行 */
+.banner .acts{flex-wrap:wrap}
 
 /* 子菜单编辑（横幅列表式，与主菜单一致） */
 .sub-edit{margin-top:12px;padding:14px;border:1px dashed #cfd4e2;border-radius:12px;background:#fff}
@@ -259,7 +287,7 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 </head>
 <body>
 <div class="topbar">
-  <div class="topbar-title">QQBot 菜单与面板</div>
+  <div class="topbar-title">菜单与面板</div>
   <div class="topbar-right">
     <div class="drop" id="modeDrop">
       <div class="trigger" id="modeTrigger">自定义菜单</div>
@@ -304,9 +332,17 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
         </div>
       </div>
       <div class="section">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div class="section-title" style="margin-bottom:0">菜单项</div>
-          <div class="hint">拖动左侧按钮可排序，最多 10 个</div>
+        <div class="sec-head">
+          <div>
+            <div class="section-title" style="margin-bottom:2px">菜单项</div>
+            <div class="hint">拖动左侧按钮可排序，最多 10 个</div>
+          </div>
+          <div class="bar-actions">
+            <label class="bk-toggle" title="保存成功后自动备份当前菜单"><input type="checkbox" id="menuBackupToggle"><span class="knob"></span>自动备份</label>
+            <button class="btn sm ghost" onclick="openBackupModal('menu')">备份记录</button>
+            <button class="btn sm ghost" onclick="exportMenu()">导出</button>
+            <button class="btn sm ghost" onclick="importMenu()">导入</button>
+          </div>
         </div>
         <div id="menuList" class="list-col"></div>
         <div class="add-box" id="menuAdd"><span>+</span> 新增菜单项</div>
@@ -353,9 +389,16 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
           <button class="scope" data-scope="channel">文字子频道 channel</button>
           <button class="scope" data-scope="dm">频道私信 dm</button>
         </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div class="section-title" style="margin-bottom:0">指令面板列表</div>
-          <div class="hint">拖动左侧按钮可排序，最多 20 个面板</div>
+        <div class="sec-head">
+          <div>
+            <div class="section-title" style="margin-bottom:2px">指令面板列表</div>
+            <div class="hint">拖动左侧按钮可排序，最多 20 个面板</div>
+          </div>
+          <div class="bar-actions">
+            <label class="bk-toggle" title="保存成功后自动备份当前面板"><input type="checkbox" id="panelBackupToggle"><span class="knob"></span>自动备份</label>
+            <button class="btn sm ghost" onclick="openBackupModal('panel')">备份记录</button>
+            <button class="btn sm ghost" onclick="importPanel()">导入</button>
+          </div>
         </div>
         <div id="panelList" class="list-col"></div>
         <div class="add-box" id="panelAdd"><span>+</span> 创建指令面板</div>
@@ -471,6 +514,57 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
     <div class="footer-actions"><button class="btn ghost" onclick="closeModal('target-modal')">取消</button><button class="btn" onclick="submitTarget()">保存</button></div>
   </div>
 </div>
+
+<!-- 备份记录弹窗 -->
+<div class="modal-overlay" id="backup-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head"><div class="modal-title" id="backup-modal-title">备份记录</div><button class="modal-close" onclick="closeModal('backup-modal')">×</button></div>
+    <div class="modal-body" id="backupListWrap" style="flex:1;overflow-y:auto;padding:16px 20px">
+      <div id="backupList" class="list-col"><div class="empty">暂无备份</div></div>
+    </div>
+    <div class="footer-actions"><button class="btn ghost" onclick="closeModal('backup-modal')">关闭</button></div>
+  </div>
+</div>
+
+<!-- 备份预览弹窗（手机模拟预览） -->
+<div class="modal-overlay" id="preview-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-head"><div class="modal-title" id="preview-modal-title">预览</div><button class="modal-close" onclick="closeModal('preview-modal')">×</button></div>
+    <div class="preview-scroll" style="flex:1;overflow-y:auto;padding:16px 20px">
+      <div class="phone bk-phone" style="max-width:340px;margin:0 auto">
+        <div class="phone-bar">
+          <span class="bar-ico" title="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span>
+          <div class="bar-info">
+            <div class="bar-name">机器人</div>
+            <div class="bar-status"><span class="status-dot"></span><span>在线</span> <span class="bar-arrow">›</span></div>
+          </div>
+          <span class="bar-ico" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span>
+        </div>
+        <div class="phone-body"><div class="chat-bubble">备份内容预览</div></div>
+        <div class="phone-foot">
+          <div id="bkPreviewMenuWrap">
+            <div class="qq-menu-bar" id="bkMenuPreview"><span class="hint" style="margin:auto">（暂无菜单）</span></div>
+            <div id="bkSubPops"></div>
+            <div class="phone-input"><div class="box">发送消息…</div><button class="send-btn" title="发送"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 14.01c-.5.06-.87.49-.87.99l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg></button></div>
+          </div>
+          <div id="bkPreviewPanelWrap" style="display:none">
+            <div class="phone-input"><div class="box">发送消息…</div><button class="send-btn" title="发送"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 14.01c-.5.06-.87.49-.87.99l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg></button></div>
+            <div class="qq-panel show" id="bkPanelPreview" style="max-height:min(50vh,400px)">
+              <div class="qq-panel-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg><span>快捷指令</span><span id="bkPanelPreviewCount"></span></div>
+              <div class="qq-panel-div"></div>
+              <div id="bkPanelPreviewList"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="footer-actions"><button class="btn ghost" onclick="closeModal('preview-modal')">关闭</button></div>
+  </div>
+</div>
+
+<!-- 隐藏的 JSON 导入文件输入 -->
+<input type="file" id="menuImportFile" accept=".json,application/json" style="display:none">
+<input type="file" id="panelImportFile" accept=".json,application/json" style="display:none">
 
 <div class="toast" id="toast"></div>
 
@@ -955,7 +1049,7 @@ function renderPanelList(){
       <div class="handle" draggable="true" title="拖动排序">⋮⋮</div>
       <div class="icon">🎛️</div>
       <div class="meta"><div class="name">${name}</div><div class="sub">${esc(p.scope||activePanelScope)} · ${esc(p.target_type||"all")} · ${items} 个元素</div><div class="sub">ID: ${esc(pid)} · ${timeTxt}</div></div>
-      <div class="acts"><button class="btn sm ghost" onclick="editPanelItem(${i})">编辑</button><button class="btn sm ghost" onclick="previewThisPanel(${i})">预览</button><button class="btn sm danger" onclick="deletePanelItem(${i})">删除</button></div>
+      <div class="acts"><button class="btn sm ghost" onclick="editPanelItem(${i})">编辑</button><button class="btn sm ghost" onclick="exportPanel(${i})">导出</button><button class="btn sm ghost" onclick="previewThisPanel(${i})">预览</button><button class="btn sm danger" onclick="deletePanelItem(${i})">删除</button></div>
     </div>`
   }).join("")
   setupPanelDrag()
@@ -1361,9 +1455,244 @@ async function submitTarget(){
   catch(e){toast("操作失败："+e.message,true)}finally{setBusy(false)}
 }
 
+/* ===== 备份 / 导入导出 ===== */
+let menuBackupEnabled=false,panelBackupEnabled=false
+async function loadBackupConfig(){
+  try{
+    const r=await fetch(getUrl("/backup/config")).then(x=>x.json())
+    if(r.ok&&r.data){
+      menuBackupEnabled=!!r.data.menuEnabled;panelBackupEnabled=!!r.data.panelEnabled
+      const mt=$("#menuBackupToggle"),pt=$("#panelBackupToggle")
+      if(mt)mt.checked=menuBackupEnabled;if(pt)pt.checked=panelBackupEnabled
+    }
+  }catch(e){/* 忽略：开关状态失败时保持默认关 */}
+}
+async function saveBackupConfig(){
+  try{await fetch(getUrl("/backup/config"),{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({menuEnabled:menuBackupEnabled,panelEnabled:panelBackupEnabled})})}
+  catch(e){toast("备份配置保存失败："+e.message,true)}
+}
+$("#menuBackupToggle").addEventListener("change",e=>{menuBackupEnabled=e.target.checked;saveBackupConfig()})
+$("#panelBackupToggle").addEventListener("change",e=>{panelBackupEnabled=e.target.checked;saveBackupConfig()})
+
+function downloadJson(obj,filename){
+  const blob=new Blob([JSON.stringify(obj,null,2)],{type:"application/json"})
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},100)
+}
+function fileStamp(){const d=new Date();const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`}
+
+/* ===== 菜单：导出 / 导入 ===== */
+function exportMenu(){
+  if(menuEditIdx!==-1){toast("请先完成当前编辑",true);return}
+  downloadJson({type:"menu",exportedAt:new Date().toISOString(),menu:{items:menuItems.map(menuPayloadItem)}},"menu_"+fileStamp()+".json")
+}
+function importMenu(){$("#menuImportFile").value="";$("#menuImportFile").click()}
+$("#menuImportFile").addEventListener("change",async e=>{
+  const f=e.target.files[0];e.target.value="";if(!f)return
+  try{
+    const j=JSON.parse(await f.text())
+    const src=j.data&&j.data.menu?j.data.menu:j.menu||j
+    let items=src.items||src.buttons||(Array.isArray(j)?j:[])
+    if(!Array.isArray(items))throw new Error("JSON 中未找到菜单 items")
+    items=items.map(normalizeMenuItem).filter(x=>x.name)
+    if(!items.length){toast("导入文件中没有菜单项",true);return}
+    menuItems.push(...items)
+    if(menuItems.length>10){toast("菜单最多 10 个，已截断保留前 10 个",true);menuItems=menuItems.slice(0,10)}
+    renderMenuList();toast("已导入 "+items.length+" 个菜单项，请点击右上角保存生效")
+  }catch(err){toast("导入失败："+err.message,true)}
+})
+
+/* ===== 面板：导出 / 导入 ===== */
+function exportPanel(i){
+  const p=panels[i];const pid=p.panel_id||p.id||""
+  if(!pid){toast("面板 ID 为空，无法导出",true);return}
+  setBusy(true)
+  fetch(getUrl("/panels/"+encodeURIComponent(pid))).then(r=>r.json()).then(r=>{
+    const src=(r&&r.ok&&r.data)?r.data:(r&&(r.panel_id||r.scope||r.target_type)?r:p)
+    const dPanel=src.panel||p.panel||{}
+    downloadJson({
+      type:"panel",exportedAt:new Date().toISOString(),
+      scope:src.scope||p.scope||activePanelScope,
+      target_type:src.target_type||p.target_type||"all",
+      user_openids:src.user_openids||[],group_openids:src.group_openids||[],
+      panel:{items:(dPanel.items||dPanel.buttons||[]).map(normalizePanelItem),remark:dPanel.remark||""}
+    },"panel_"+pid+".json")
+    toast("已导出")
+  }).catch(err=>toast("导出失败："+err.message,true)).finally(()=>setBusy(false))
+}
+function importPanel(){$("#panelImportFile").value="";$("#panelImportFile").click()}
+$("#panelImportFile").addEventListener("change",async e=>{
+  const f=e.target.files[0];e.target.value="";if(!f)return
+  try{
+    const j=JSON.parse(await f.text())
+    const d=j.data&&j.data.scope?j.data:j
+    if(!d.panel&&!d.items)throw new Error("JSON 中未找到面板数据（panel）")
+    openPanelFromData(d,"导入")
+  }catch(err){toast("导入失败："+err.message,true)}
+})
+
+/* ===== 备份记录 ===== */
+let backupKind="menu"
+async function openBackupModal(kind){
+  backupKind=kind
+  $("#backup-modal-title").textContent=kind==="menu"?"菜单备份记录":"指令面板备份记录"
+  openModal("backup-modal")
+  const box=$("#backupList");box.innerHTML='<div class="empty">加载中…</div>'
+  try{
+    const r=await fetch(getUrl("/backup/"+kind)).then(x=>x.json())
+    if(!r.ok){box.innerHTML='<div class="empty">'+esc(r.error)+'</div>';return}
+    const list=r.data||[]
+    if(!list.length){box.innerHTML='<div class="empty">暂无备份记录（保存成功后自动生成）</div>';return}
+    box.innerHTML=list.map(it=>{
+      const sub=kind==="menu"?(it.itemCount+" 个菜单项"):((it.scope||"")+" · "+(it.itemCount||0)+" 条指令")
+      return `<div class="banner">
+        <div class="meta"><div class="name">${esc(it.time||it.file)}</div><div class="sub">${esc(sub)}</div></div>
+        <div class="acts">
+          <button class="btn sm ghost" onclick="previewBackup('${esc(it.file)}')">预览</button>
+          <button class="btn sm ghost" onclick="useBackup('${esc(it.file)}')">使用</button>
+          <button class="btn sm ghost" onclick="downloadBackup('${esc(it.file)}')">下载</button>
+          <button class="btn sm danger" onclick="deleteBackup('${esc(it.file)}')">删除</button>
+        </div>
+      </div>`
+    }).join("")
+  }catch(err){box.innerHTML='<div class="empty">'+esc(err.message)+'</div>'}
+}
+function useBackup(file){if(backupKind==="menu")useMenuBackup(file);else usePanelBackup(file)}
+async function deleteBackup(file){
+  if(!confirm("确定删除该备份？"))return
+  try{
+    const r=await fetch(getUrl("/backup/"+backupKind+"/"+encodeURIComponent(file)),{method:"DELETE"}).then(x=>x.json())
+    if(!r.ok){toast(r.error,true);return}
+    toast("已删除");openBackupModal(backupKind)
+  }catch(e){toast("删除失败："+e.message,true)}
+}
+// 下载备份文件：还原为与导出一致的 JSON（type + time + data），可直接发给他人导入
+async function downloadBackup(file){
+  try{
+    const r=await fetch(getUrl("/backup/"+backupKind+"/"+encodeURIComponent(file))).then(x=>x.json())
+    if(!r.ok){toast(r.error,true);return}
+    downloadJson({type:backupKind,time:r.time||"",data:r.data||{}},file)
+    toast("已下载")
+  }catch(e){toast("下载失败："+e.message,true)}
+}
+// 预览备份：弹窗内用手机模拟器渲染菜单或指令面板
+async function previewBackup(file){
+  try{
+    const r=await fetch(getUrl("/backup/"+backupKind+"/"+encodeURIComponent(file))).then(x=>x.json())
+    if(!r.ok){toast(r.error,true);return}
+    const d=r.data||{}
+    $("#preview-modal-title").textContent=(backupKind==="menu"?"菜单预览":"指令面板预览")+(r.time?" · "+esc(r.time):"")
+    const mw=$("#bkPreviewMenuWrap"),pw=$("#bkPreviewPanelWrap")
+    if(backupKind==="menu"){
+      const items=(d.menu&&d.menu.items)||d.items||[]
+      mw.style.display="block";pw.style.display="none"
+      renderBkMenuPreview(items)
+    }else{
+      const panel=d.panel||{}
+      const items=panel.items||panel.buttons||[]
+      pw.style.display="block";mw.style.display="none"
+      renderBkPanelPreview(items)
+    }
+    openModal("preview-modal")
+  }catch(e){toast("预览失败："+e.message,true)}
+}
+// 菜单备份预览渲染（独立于编辑态，仅展示）
+function renderBkMenuPreview(items){
+  const bar=$("#bkMenuPreview")
+  const clean=items.map(normalizeMenuItem)
+  if(!clean.length){bar.innerHTML='<span class="hint" style="margin:auto">（暂无菜单）</span>';if($("#bkSubPops"))$("#bkSubPops").innerHTML="";return}
+  const pops=[]
+  bar.innerHTML=clean.map((x,i)=>{
+    const name=x.name?esc(x.name):'<span style="color:var(--danger)">未命名</span>'
+    if(x.type==="menu"&&x.sub_menu_items.length){
+      const headIcn=ICN.menu?`<img src="${ICN.menu}" alt="">`:""
+      const subItems=x.sub_menu_items.map(s=>{
+        const si=ICN[s.type]?`<img src="${ICN[s.type]}" alt="">`:""
+        return `<div class="qq-sub-item">${si}<span>${esc(s.name||"子项")}</span></div>`
+      }).join("")
+      pops.push(`<div class="qq-sub-pop" data-subpop="${i}"><div class="qq-sub-head">${headIcn}<span>${name}</span></div><div class="qq-sub-div"></div>${subItems}</div>`)
+    }
+    const icon=ICN[x.type]?`<img src="${ICN[x.type]}" alt="">`:""
+    const isOn=x.type==="switch"&&!!x.switch?.default
+    const dot=isOn?'<span class="dot"></span>':''
+    return `<div class="qq-menu-btn ${x.type==="menu"?"qq-menu-sub":""} ${isOn?"on":""}" data-mbtn="${i}">${icon}${name}${dot}</div>`
+  }).join("")
+  if($("#bkSubPops"))$("#bkSubPops").innerHTML=pops.join("")
+}
+// 面板备份预览渲染：指令列表
+function renderBkPanelPreview(items){
+  const list=$("#bkPanelPreviewList"),count=$("#bkPanelPreviewCount")
+  if(count)count.textContent=items.length+" 条指令"
+  if(!list)return
+  if(!items.length){list.innerHTML='<div class="hint" style="padding:8px">暂无指令</div>';return}
+  list.innerHTML=items.map(x=>{
+    const nm=x.name?("/"+esc(x.name)):"/未命名"
+    const ds=x.desc?esc(x.desc):""
+    return `<div class="qq-cmd"><span class="qq-cmd-name">${nm}</span><span class="qq-cmd-desc">${ds}</span></div>`
+  }).join("")
+}
+// 预览弹窗内子菜单点击展开
+$("#bkMenuPreview").addEventListener("click",e=>{
+  const btn=e.target.closest(".qq-menu-sub")
+  if(!btn)return
+  e.stopPropagation()
+  const pop=document.querySelector('#bkSubPops .qq-sub-pop[data-subpop="'+btn.dataset.mbtn+'"]')
+  if(!pop)return
+  const show=!pop.classList.contains("show")
+  $$("#bkSubPops .qq-sub-pop.show").forEach(p=>p.classList.remove("show"))
+  if(show)pop.classList.add("show")
+})
+// 菜单：使用备份 → 将备份项追加到现有列表下方
+async function useMenuBackup(file){
+  try{
+    const r=await fetch(getUrl("/backup/menu/"+encodeURIComponent(file))).then(x=>x.json())
+    if(!r.ok){toast(r.error,true);return}
+    const items=(r.data&&r.data.menu&&r.data.menu.items)||[]
+    if(!Array.isArray(items)||!items.length){toast("该备份中没有菜单项",true);return}
+    menuItems.push(...items.map(normalizeMenuItem).filter(x=>x.name))
+    if(menuItems.length>10){toast("菜单最多 10 个，已截断保留前 10 个",true);menuItems=menuItems.slice(0,10)}
+    closeModal("backup-modal")
+    renderMenuList()
+    toast("已追加菜单项，请点击右上角保存生效")
+  }catch(e){toast("使用备份失败："+e.message,true)}
+}
+// 面板：使用备份 → 打开创建弹窗并填入，允许修改（含 scope），保存才生效
+async function usePanelBackup(file){
+  try{
+    const r=await fetch(getUrl("/backup/panel/"+encodeURIComponent(file))).then(x=>x.json())
+    if(!r.ok){toast(r.error,true);return}
+    closeModal("backup-modal")
+    openPanelFromData(r.data||{},"备份")
+  }catch(e){toast("使用备份失败："+e.message,true)}
+}
+async function openPanelFromData(d,srcLabel){
+  // 兼容两种结构：{scope,...,panel:{items,remark}} 或直接 {items,remark,...}
+  const hasPanelObj=!!d.panel
+  const panel=hasPanelObj?d.panel:d
+  const gIds=d.group_openids||[],uIds=d.user_openids||[]
+  currentPanelId=null;panelEditIdx=-2;activePreviewPanel=null
+  panelEditor={
+    scope:["c2c","group","channel","dm"].includes(d.scope)?d.scope:activePanelScope,
+    target_type:d.target_type==="specific"?"specific":"all",
+    groupOpenids:gIds.map(o=>({openid:o,found:false})),
+    userOpenids:uIds.map(o=>({openid:o,found:false})),
+    remark:String((hasPanelObj?d.panel.remark:d.remark)||""),
+    items:Array.isArray(panel.items||panel.buttons)?(panel.items||panel.buttons).map(normalizePanelItem):[]
+  }
+  $("#panel-modal-title").textContent="创建指令面板（来自"+srcLabel+"）"
+  $("#panel-modal-save").textContent="创建"
+  fillPanelEditor(false)
+  // 异步补全昵称/头像（失败不影响编辑）
+  await Promise.all([
+    ...gIds.map((_,i)=>resolveOpenid("group",i)),
+    ...uIds.map((_,i)=>resolveOpenid("user",i)),
+  ])
+  renderOpenidList("group");renderOpenidList("user")
+}
+
 /* ===== 启动 ===== */
 loadMenu()
 loadCurrentBot()
+loadBackupConfig()
 
 // 监听主页面（左上角）切换 Bot：收到后同步刷新当前 Bot 信息与菜单/面板数据
 window.addEventListener("message", e=>{
