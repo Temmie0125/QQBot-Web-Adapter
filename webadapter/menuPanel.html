@@ -48,6 +48,8 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 .section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;margin-bottom:18px;box-shadow:var(--shadow)}
 .section-title{font-size:15px;font-weight:700;margin-bottom:14px}
 .hint{font-size:12px;color:var(--text2);line-height:1.6}
+/* 排序方式提示语：桌面提示拖动左侧按钮，手机端提示长按横幅（默认显示桌面文案，窄屏切换） */
+.drag-tip-hold{display:none}
 
 .split{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
 .split>.section{flex:1 1 360px;min-width:0;max-width:100%}
@@ -59,6 +61,15 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
   /* 手机/窄屏：编辑弹窗 grid 强制单列并允许子项收缩，scope/target_type/openids 等字段铺满整行、不再横向溢出 */
   .edit-form .grid{grid-template-columns:minmax(0,1fr)}
   .modal{width:100%}
+  /* 手机端：隐藏六点拖动柄，改为长按横幅本身拖动排序 */
+  .banner .handle,.sub-banner .handle{display:none}
+  .banner,.sub-banner{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  .banner img,.sub-banner img{pointer-events:none}
+  .banner.dragging,.sub-banner.dragging{opacity:.45}
+  .banner{gap:10px}
+  /* 手机端提示语切换为长按横幅 */
+  .drag-tip-dot{display:none}
+  .drag-tip-hold{display:inline}
 }
 
 /* 手机预览 */
@@ -335,7 +346,7 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
         <div class="sec-head">
           <div>
             <div class="section-title" style="margin-bottom:2px">菜单项</div>
-            <div class="hint">拖动左侧按钮可排序，最多 10 个</div>
+            <div class="hint"><span class="drag-tip-dot">拖动左侧按钮可排序</span><span class="drag-tip-hold">长按横幅可拖动排序</span>，最多 10 个</div>
           </div>
           <div class="bar-actions">
             <label class="bk-toggle" title="保存成功后自动备份当前菜单"><input type="checkbox" id="menuBackupToggle"><span class="knob"></span>自动备份</label>
@@ -392,7 +403,7 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
         <div class="sec-head">
           <div>
             <div class="section-title" style="margin-bottom:2px">指令面板列表</div>
-            <div class="hint">拖动左侧按钮可排序，最多 20 个面板</div>
+            <div class="hint"><span class="drag-tip-dot">拖动左侧按钮可排序</span><span class="drag-tip-hold">长按横幅可拖动排序</span>，最多 20 个面板</div>
           </div>
           <div class="bar-actions">
             <label class="bk-toggle" title="保存成功后自动备份当前面板"><input type="checkbox" id="panelBackupToggle"><span class="knob"></span>自动备份</label>
@@ -745,7 +756,7 @@ function menuFieldsHtml(x){
     <div class="field toggle-row"><label>默认打开 default</label>
       <label class="switch-toggle"><input type="checkbox" id="m-f-switch_default" ${x.switch.default?"checked":""}><span class="knob"></span></label>
     </div>`
-  if(x.type==="menu")return `<div class="sub-edit"><div class="sub-edit-t">二级菜单（最多 5 个，拖动左侧按钮可排序）</div><div id="m-sub-list" class="list-col"></div><div class="add-box" id="subAdd" style="margin-top:10px"><span>+</span> 新增二级菜单</div></div>`
+  if(x.type==="menu")return `<div class="sub-edit"><div class="sub-edit-t">二级菜单（最多 5 个，<span class="drag-tip-dot">拖动左侧按钮可排序</span><span class="drag-tip-hold">长按横幅可拖动排序</span>）</div><div id="m-sub-list" class="list-col"></div><div class="add-box" id="subAdd" style="margin-top:10px"><span>+</span> 新增二级菜单</div></div>`
   return ""
 }
 /* ===== 子项（二级菜单）横幅列表式编辑 ===== */
@@ -847,6 +858,13 @@ function setupSubDrag(){
       clearDropIndicator()
       renderSubList()
     })
+  })
+  // 移动端：隐藏六点后，长按整条横幅拖动排序
+  if(window.matchMedia("(max-width:900px)").matches)setupHoldDrag("#m-sub-list",".sub-banner",{
+    onStart:b=>{subDragSrc=b},
+    onMove:(target,t)=>holdDragMove(target,t,subDragSrc,".sub-banner"),
+    onEnd:(target,t)=>{if(!subDragSrc)return;commitReorder(subDragSrc,target,computeDropMode(target,t.clientY),getDraftMenu().sub_menu_items,"sidx",renderSubList)},
+    onCancel:()=>{subDragSrc=null}
   })
 }
 
@@ -974,6 +992,86 @@ function computeDropMode(b,clientY){
   if(rel>0.75)return {mode:"insert",after:true}
   return {mode:"swap"}
 }
+// 拖拽排序提交共用逻辑（swap 互换 / insert 插入），随后调用 render()
+function commitReorder(src,target,m,arr,key,render){
+  const from=Number(src.dataset[key]),to=Number(target.dataset[key])
+  if(m.mode==="swap"){
+    if(from!==to){const t=arr[to];arr[to]=arr[from];arr[from]=t}
+  }else{
+    let insert=m.after?to+1:to
+    if(from<insert)insert-=1
+    if(insert<0)insert=0
+    reorderArr(arr,from,insert)
+  }
+  clearDropIndicator()
+  render()
+}
+// 移动端长按横幅拖动排序（桌面端保留原生 HTML5 拖拽）
+const HOLD_MS=550,HOLD_TOL=10
+let holdDrag=null
+// 触摸拖动中：高亮目标横幅（swap）或显示插入指示线（insert）
+function holdDragMove(target,t,src,bannerSel){
+  $$(bannerSel+".drag-over").forEach(b=>{if(b!==target)b.classList.remove("drag-over")})
+  if(!src||src===target){clearDropIndicator();target.classList.remove("drag-over");return}
+  const m=computeDropMode(target,t.clientY)
+  if(m.mode==="insert"){target.classList.remove("drag-over");showDropIndicator(target,m.after)}
+  else{clearDropIndicator();target.classList.add("drag-over")}
+}
+// 为容器一次性绑定触摸长按拖动：长按横幅 HOLD_MS 后进入拖拽态，滑到目标横幅松手即排序
+function setupHoldDrag(containerSel,bannerSel,handlers){
+  const root=document.querySelector(containerSel)
+  if(!root||root._holdReady)return
+  root._holdReady=true
+  root.addEventListener("touchstart",e=>{
+    if(e.touches.length!==1||holdDrag)return
+    const banner=e.target.closest(bannerSel)
+    if(!banner)return
+    if(e.target.closest("button,input,textarea,select,.add-box,.dd,.seg"))return
+    const t=e.touches[0]
+    const h={root,banner,handlers,fired:false,startX:t.clientX,startY:t.clientY}
+    h.timer=setTimeout(()=>{
+      h.fired=true
+      banner.classList.add("dragging")
+      if(handlers.onStart)handlers.onStart(banner)
+    },HOLD_MS)
+    holdDrag=h
+  },{passive:true})
+  root.addEventListener("touchmove",e=>{
+    if(!holdDrag||holdDrag.root!==root)return
+    const t=e.touches[0]
+    if(!holdDrag.fired){
+      // 长按前手指移动过大视为滚动，取消本次长按
+      if(Math.abs(t.clientX-holdDrag.startX)>HOLD_TOL||Math.abs(t.clientY-holdDrag.startY)>HOLD_TOL)cancelHoldDrag(root)
+      return
+    }
+    e.preventDefault()
+    const el=document.elementFromPoint(t.clientX,t.clientY)
+    const target=el&&el.closest(bannerSel)
+    if(target&&handlers.onMove)handlers.onMove(target,t)
+    else if(!el||!el.classList.contains("drop-indicator"))clearDropIndicator()
+  },{passive:false})
+  root.addEventListener("touchend",e=>{
+    if(!holdDrag||holdDrag.root!==root)return
+    const t=e.changedTouches[0]
+    if(holdDrag.fired&&t&&handlers.onEnd){
+      const el=document.elementFromPoint(t.clientX,t.clientY)
+      const target=el&&el.closest(bannerSel)
+      if(target&&target!==holdDrag.banner)handlers.onEnd(target,t)
+    }
+    cancelHoldDrag(root)
+  })
+  root.addEventListener("touchcancel",()=>cancelHoldDrag(root))
+}
+function cancelHoldDrag(root){
+  if(!holdDrag)return
+  if(root&&holdDrag.root!==root)return
+  clearTimeout(holdDrag.timer)
+  if(holdDrag.banner)holdDrag.banner.classList.remove("dragging")
+  clearDropIndicator()
+  $$(".banner.drag-over, .sub-banner.drag-over").forEach(b=>b.classList.remove("drag-over"))
+  if(holdDrag.handlers&&holdDrag.handlers.onCancel)holdDrag.handlers.onCancel()
+  holdDrag=null
+}
 function setupMenuDrag(){
   $$("#menuList .banner .handle").forEach(h=>{
     h.addEventListener("dragstart",e=>{
@@ -1008,6 +1106,13 @@ function setupMenuDrag(){
       clearDropIndicator()
       renderMenuList()
     })
+  })
+  // 移动端：隐藏六点后，长按整条横幅拖动排序
+  if(window.matchMedia("(max-width:900px)").matches)setupHoldDrag("#menuList",".banner",{
+    onStart:b=>{dragSrc=b},
+    onMove:(target,t)=>holdDragMove(target,t,dragSrc,".banner"),
+    onEnd:(target,t)=>{if(!dragSrc)return;commitReorder(dragSrc,target,computeDropMode(target,t.clientY),menuItems,"idx",renderMenuList)},
+    onCancel:()=>{dragSrc=null}
   })
 }
 
@@ -1128,6 +1233,13 @@ function setupPanelDrag(){
       renderPanelList()
     })
   })
+  // 移动端：隐藏六点后，长按整条横幅拖动排序
+  if(window.matchMedia("(max-width:900px)").matches)setupHoldDrag("#panelList",".banner",{
+    onStart:b=>{dragSrc=b},
+    onMove:(target,t)=>holdDragMove(target,t,dragSrc,".banner"),
+    onEnd:(target,t)=>{if(!dragSrc)return;commitReorder(dragSrc,target,computeDropMode(target,t.clientY),panels,"pidx",renderPanelList)},
+    onCancel:()=>{dragSrc=null}
+  })
 }
 
 async function editPanelItem(i){
@@ -1245,6 +1357,13 @@ function setupPanelItemDrag(){
       clearDropIndicator()
       renderPanelItems();renderPanelPreview()
     })
+  })
+  // 移动端：隐藏六点后，长按整条横幅拖动排序
+  if(window.matchMedia("(max-width:900px)").matches)setupHoldDrag("#panelItemForm",".banner",{
+    onStart:b=>{dragSrc=b},
+    onMove:(target,t)=>holdDragMove(target,t,dragSrc,".banner"),
+    onEnd:(target,t)=>{if(!dragSrc)return;commitReorder(dragSrc,target,computeDropMode(target,t.clientY),panelEditor.items,"pi",()=>{renderPanelItems();renderPanelPreview()})},
+    onCancel:()=>{dragSrc=null}
   })
 }
 
