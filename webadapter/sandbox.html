@@ -631,18 +631,19 @@ document.getElementById('quickInput').addEventListener('input',function(){this.s
 /* ===================== + 弹窗：其他通知 / 请求 ===================== */
 // 仅保留 QQBot 官方可接收的被动 notice 事件（对齐 QQBot-Plugin.makeNotice 的
 // notice_type / sub_type 组合）。群聊(group) 与 私信(friend) 分开两组。
+// 线性图标（stroke 风格，与顶栏图标一致），替换原本的 emoji
+function icoSVG(inner){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;flex:none">'+inner+'</svg>'}
 var NOTICES=[
   // —— 群聊事件（notice.group.*） ——
-  {grp:'group',ico:'➕',label:'群成员入群',sub:'group/increase',noticeType:'group',subType:'increase',text:'测试用户 加入了群聊'},
-  {grp:'group',ico:'➖',label:'群成员退群',sub:'group/decrease',noticeType:'group',subType:'decrease',text:'测试用户 退出了群聊'},
-  {grp:'group',ico:'🤖',label:'机器人被拉入群',sub:'group/add',noticeType:'group',subType:'add',text:'测试用户 邀请 机器人 加入了群聊'},
-  {grp:'group',ico:'🚫',label:'机器人被移出群',sub:'group/del',noticeType:'group',subType:'del',text:'测试用户 将 机器人 移出了群聊'},
-  {grp:'group',ico:'🔄',label:'群信息更新',sub:'group/update',noticeType:'group',subType:'update',text:'群名称/群资料已更新'},
-  {grp:'group',ico:'📩',label:'加群申请',sub:'group/request',noticeType:'group',subType:'request',applySource:'group',verifyInfo:'我是来测试的',text:'测试用户 申请加入群聊，等待审核'},
+  {grp:'group',ico:icoSVG('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/>'),label:'群成员入群',sub:'group/increase',noticeType:'group',subType:'increase',text:'测试用户 加入了群聊'},
+  {grp:'group',ico:icoSVG('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="11" x2="13" y2="11"/>'),label:'群成员退群',sub:'group/decrease',noticeType:'group',subType:'decrease',text:'测试用户 退出了群聊'},
+  {grp:'group',ico:icoSVG('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 17.5 12.5 21 9"/>'),label:'机器人被拉入群',sub:'group/add',noticeType:'group',subType:'add',text:'测试用户 邀请 机器人 加入了群聊'},
+  {grp:'group',ico:icoSVG('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="9" x2="22" y2="14"/><line x1="22" y1="9" x2="17" y2="14"/>'),label:'机器人被移出群',sub:'group/del',noticeType:'group',subType:'del',text:'测试用户 将 机器人 移出了群聊'},
+  {grp:'group',ico:icoSVG('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><circle cx="17" cy="17" r="3"/><polyline points="17 15 17 17 19 17"/>'),label:'加群申请',sub:'group/request',noticeType:'group',subType:'request',applySource:'group',verifyInfo:'我是来测试的',text:'测试用户 申请加入群聊，等待审核'},
   // —— 私信（好友）事件（notice.friend.*） ——
-  {grp:'private',ico:'👥',label:'好友添加',sub:'friend/increase',noticeType:'friend',subType:'increase',text:'测试用户 已添加机器人为好友'},
-  {grp:'private',ico:'💔',label:'好友删除',sub:'friend/decrease',noticeType:'friend',subType:'decrease',text:'测试用户 删除了机器人'},
-  {grp:'private',ico:'✉️',label:'加好友申请',sub:'friend/request',noticeType:'friend',subType:'request',applySource:'friend',verifyInfo:'求通过',text:'测试用户 申请添加机器人为好友，等待审核'},
+  {grp:'private',ico:icoSVG('<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>'),label:'好友添加',sub:'friend/increase',noticeType:'friend',subType:'increase',text:'测试用户 已添加机器人为好友'},
+  {grp:'private',ico:icoSVG('<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23"/><line x1="3" y1="3" x2="21" y2="21"/>'),label:'好友删除',sub:'friend/decrease',noticeType:'friend',subType:'decrease',text:'测试用户 删除了机器人'},
+  {grp:'private',ico:icoSVG('<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><polyline points="9 14 11 16 15 12"/>'),label:'加好友申请',sub:'friend/request',noticeType:'friend',subType:'request',applySource:'friend',verifyInfo:'求通过',text:'测试用户 申请添加机器人为好友，等待审核'},
 ]
 var NOTICE_GROUPS=[
   {key:'group',title:'群聊事件',sub:'notice.group.*'},
