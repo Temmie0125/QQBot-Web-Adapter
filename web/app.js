@@ -6206,6 +6206,23 @@ function connectWebSocket() {
   }
 }
 
+// 沙盒 iframe 通过 postMessage 请求订阅 QQBotSandbox 频道（复用已鉴权的主 WS）
+window.addEventListener("message", (e) => {
+  const d = e.data
+  if (!d || !d.type) return
+  if (d.type === "qqbot-sandbox-watch" || d.type === "qqbot-sandbox-unwatch") {
+    if (state.ws && state.wsReady) {
+      const msg = {
+        type: d.type === "qqbot-sandbox-watch" ? "watch" : "unwatch",
+        selfId: d.selfId,
+      }
+      if (d.groupId) msg.groupId = d.groupId
+      if (d.privateUserId) msg.privateUserId = d.privateUserId
+      try { state.ws.send(JSON.stringify(msg)) } catch {}
+    }
+  }
+})
+
 // 群名更新（来自后端 getGroupInfo 补取/刷新）：更新本地 state 并刷新显示
 function handleGroupNameUpdated(groupId, groupName) {
   if (!groupId || !groupName) return
@@ -6227,6 +6244,14 @@ function handleGroupNameUpdated(groupId, groupName) {
 
 function handleWsMessage(data) {
   if (!data) return
+  // 沙盒消息转发：将 self_id=QQBotSandbox 的消息通过 postMessage 转给沙盒 iframe
+  if ((data.type === "new_message" || data.type === "new_private_message") &&
+      data.message && data.message.self_id === "QQBotSandbox") {
+    document.querySelectorAll("iframe.web-page-iframe").forEach(ifr => {
+      try { ifr.contentWindow.postMessage({ type: "qqbot-sandbox-message", payload: data }, "*") } catch {}
+    })
+    return
+  }
   // 群名自动补取/刷新成功后，后端推送更新：立即刷新 Web 显示（不限于当前会话）
   if (data.type === "group_name_updated") {
     handleGroupNameUpdated(data.groupId, data.group_name)

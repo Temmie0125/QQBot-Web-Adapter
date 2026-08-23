@@ -24,6 +24,10 @@ try { geoip = (await import("geoip-lite")).default } catch { geoip = null }
 // WebAdapter 自身版本
 const WEB_ADAPTER_VERSION = "1.0.2"
 
+// 加载沙盒 adapter（同 plugins/adapter/stdin.js 思路：注册一个虚拟 adapter 进 Bot.adapter）
+// 沙盒页面发送用户消息/通知会触发插件，插件回复以 qqbot_msg 事件回流到页面显示
+try { await import("./sandbox.js") } catch (e) { logger.error(`[QQBot-Web] 沙盒 adapter 加载失败: ${e.message}`) }
+
 // ========== 自定义配置加载（config.yaml 位于插件目录下） ==========
 const CONFIG_DIR = path.join(__dirname, "config")
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.yaml")
@@ -211,6 +215,9 @@ async function resolveLocalFile(file) {
 const WEB_BASE_PREFIX = config.basePath || "qqbot-web"
 const WEB_BASE = `/${WEB_BASE_PREFIX}`
 const WS_PATH = `${WEB_BASE_PREFIX}-ws`
+// 暴露 basePath 给沙盒 adapter（sandbox.js 独立模块，无法直接引用本处变量），
+// 用于构造 Bot[沙盒id].avatar 的绝对本地路径（如 /qqbot-web/public/bot.png）。
+Bot.qqbotWebBasePath = WEB_BASE
 
 // ========== 自定义页面（开发者扩展 Web 控制台页面） ==========
 // 两种注册方式：
@@ -387,6 +394,128 @@ Bot.webAdapter.registerApi = (method, route, ...handlers) => {
     : route
   Bot.express[method](full, apiAuthGuard, ...handlers)
 }
+
+// 沙盒页面 API：发送用户消息 / 触发系统通知（交由 QQBotSandbox adapter 处理，复用真实事件链路）
+Bot.webAdapter.registerApi("post", "/qqbot-sandbox/send", async (req, res) => {
+  try {
+    const sb = Bot.adapter.find(a => a.id === "QQBotSandbox")
+    if (!sb) return res.json({ ok: false, error: "沙盒 adapter 未加载" })
+    const body = req.body || {}
+    const data = sb.message({
+      groupId: body.groupId, userId: body.userId, userName: body.userName,
+      text: body.text, image: body.image, at: body.at, private: !!body.private,
+    })
+    res.json({ ok: true, message_id: data.message_id })
+  } catch (e) { res.json({ ok: false, error: e.message }) }
+})
+Bot.webAdapter.registerApi("post", "/qqbot-sandbox/notice", async (req, res) => {
+  try {
+    const sb = Bot.adapter.find(a => a.id === "QQBotSandbox")
+    if (!sb) return res.json({ ok: false, error: "沙盒 adapter 未加载" })
+    const body = req.body || {}
+    const notice = sb.notice({
+      groupId: body.groupId, userId: body.userId, userName: body.userName,
+      noticeType: body.noticeType, subType: body.subType, text: body.text,
+      groupName: body.groupName, operatorId: body.operatorId,
+      applySource: body.applySource, verifyInfo: body.verifyInfo,
+      joinRequestId: body.joinRequestId,
+    })
+    res.json({ ok: true, notice })
+  } catch (e) { res.json({ ok: false, error: e.message }) }
+})
+// 轮询兜底：页面在 WS 不可用时拉取 bot 回复（拉取即清空，单用户沙盒足够）
+Bot.webAdapter.registerApi("get", "/qqbot-sandbox/outbox", async (_req, res) => {
+  try {
+    const sb = Bot.adapter.find(a => a.id === "QQBotSandbox")
+    if (!sb || !sb.sandboxOutbox) return res.json({ ok: true, items: [] })
+    const items = sb.sandboxOutbox.splice(0, sb.sandboxOutbox.length)
+    res.json({ ok: true, items })
+  } catch (e) { res.json({ ok: false, error: e.message }) }
+})
+
+// 沙盒媒体统一端点：插件回复中的图片可能来自外部 QQ CDN，也可能来自任意 bot
+// 的本地 data/imgs/ 目录（但 local-media 端点把目录锁死在 QQBot-Plugin，且外部直链
+// 常被防盗链拦截）。该端点自动识别输入类型并统一回源，避免沙盒内图片 403/无法查看。
+//   ?url=    http(s) 外链 → 走白名单代理（与 image-proxy 一致）
+//   ?path=   本地相对路径 → 在 QQBot-Plugin 数据目录（含 data/imgs、data/emoji）下安全查找
+//   ?p=      兼容 local-media 形式的 path 参数（data/imgs/xxx.png）
+Bot.webAdapter.registerApi("get", "/qqbot-sandbox/media", async (req, res) => {
+  try {
+    const ext = path.extname
+    const mimeMap = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
+      '.mp4': 'video/mp4', '.webm': 'video/webm',
+      '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+    }
+    const sendLocal = (filePath) => {
+      const ct = mimeMap[ext(filePath).toLowerCase()] || 'application/octet-stream'
+      res.set('Content-Type', ct)
+      res.set('Cache-Control', 'public, max-age=86400')
+      res.sendFile(filePath)
+    }
+
+    const rawUrl = req.query.url
+    // 1) 外部 http(s) 链接 → 走代理（复用白名单）
+    if (rawUrl && /^https?:\/\//i.test(rawUrl)) {
+      let parsedUrl
+      try { parsedUrl = new URL(rawUrl) } catch { return res.status(400).end('invalid url') }
+      const hostname = parsedUrl.hostname.toLowerCase()
+      const allowed = IMAGE_PROXY_ALLOWED_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h))
+      if (!allowed) return res.status(403).end('host not allowed')
+      try {
+        const buf = await Bot.Buffer(rawUrl, { http: true })
+        let ct = 'image/jpeg'
+        const m = rawUrl.match(/\.(\w+)(?:\?|$)/i)
+        if (m && mimeMap['.' + m[1].toLowerCase()]) ct = mimeMap['.' + m[1].toLowerCase()]
+        res.set('Content-Type', ct)
+        res.set('Content-Length', buf.length)
+        res.set('Cache-Control', 'public, max-age=86400')
+        res.send(buf)
+      } catch (err) {
+        logger.debug(`[QQBot-Web] sandbox/media 代理失败: ${err.message}`)
+        res.status(502).end()
+      }
+      return
+    }
+
+    // 2) 本地路径（path 或 p 参数）
+    const rawRel = req.query.path || req.query.p
+    if (!rawRel) return res.status(400).end('missing url or path')
+
+    let rel
+    try { rel = decodeURIComponent(rawRel).split(/[?#]/)[0] } catch { return res.status(400).end('invalid path') }
+    rel = rel.replace(/^\/+/, '')
+    let relNorm
+    try { relNorm = path.normalize(rel) } catch { return res.status(400).end('invalid path') }
+    if (relNorm === '' || relNorm.startsWith('/') || relNorm.startsWith('\\') || relNorm.split(/[\\/]/).includes('..')) {
+      return res.status(403).end('forbidden')
+    }
+
+    // 兼容 saveMediaFile 返回的 "data/imgs/xxx" 前缀，剥离后再拼接
+    const mediaPrefix = `data${path.sep}imgs${path.sep}`
+    const mediaPrefixFlat = 'data/imgs/'
+    if (relNorm.startsWith(mediaPrefix)) relNorm = relNorm.slice(mediaPrefix.length)
+    else if (relNorm.replace(/\\/g, '/').startsWith(mediaPrefixFlat)) {
+      relNorm = relNorm.slice(mediaPrefixFlat.length)
+    }
+
+    // 在 QQBot-Plugin 数据目录下查找（imgs 与 emoji 均可）
+    const candidates = [
+      path.join(QQBT_DATA_IMGS_DIR, relNorm),
+      path.join(QQBT_DATA_EMOJI_DIR, relNorm),
+    ]
+    for (const fp of candidates) {
+      const base = path.dirname(fp)
+      if (fp !== base && !fp.startsWith(base + path.sep)) continue
+      try { await fs.access(fp); return sendLocal(fp) } catch {}
+    }
+    return res.status(404).end('not found')
+  } catch (e) {
+    logger.debug(`[QQBot-Web] sandbox/media 异常: ${e.message}`)
+    res.status(500).end()
+  }
+})
 
 // 当前选中的 Bot 直接存于进程内存（由主页面 selectBot 时上报），不落 Redis；
 // 各业务接口直接读取，自定义页面无需关心、也无需自行维护。
@@ -2781,6 +2910,8 @@ Bot.express.get(`${WEB_BASE}/api/web-pages`, (req, res) => {
 // 安全：严格防目录穿越 + 后缀白名单，禁止读到插件 webadapter/ 之外或其它文件
 const webPageRe = new RegExp('^' + WEB_BASE.replace(/[.+*?^${}()|[\]\\]/g, '\\$&') + '/api/web-page/([^/]+)/(.*)$')
 Bot.express.get(webPageRe, (req, res) => {
+  // 自定义页面不缓存，避免沙盒等页面 JS 更新后浏览器仍执行旧版本
+  res.set("Cache-Control", "no-store")
   const rawPlugin = req.params[0]
   const rawRel = req.params[1] || ""
 

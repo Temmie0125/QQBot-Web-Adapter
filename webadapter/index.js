@@ -162,6 +162,16 @@ export function init(ctx) {
     assetsDir: "public", // 资源目录：webadapter/public/ 下文件均可经 /api/web-page/<plugin>/public/ 访问
   })
 
+  // 沙盒模拟页（纯前端模拟 QQBot 事件，可切换真实 Bot 发送）
+  ctx.registerPage({
+    id: "qqbot-sandbox",
+    title: "沙盒模拟",
+    icon: "🧪",
+    priority: 80,
+    src: "sandbox.html",
+    assetsDir: "public",
+  })
+
   // 当前选中的 Bot 由主页面 selectBot 上报并存于进程内存，接口直接读取，前端无需传递 selfId
   const selfIdOf = () => Bot.webAdapter.getSelectedSelfId()
 

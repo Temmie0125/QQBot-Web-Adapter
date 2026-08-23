@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{if(window.self!==window.top)document.documentElement.className+=' embedded'}catch(e){}</script>
+<title>沙盒模拟 · QQBot</title>
+<link id="themeCss" rel="stylesheet" href="">
+<style>
+:root{
+  --accent:#4f6ef7; --accent-weak:#eef1fe;
+  --bg:#eef0f4; --card:#fff; --border:#e7e9f0;
+  --text:#1f2430; --text2:#8a90a2; --text-muted:#8a90a2;
+  --danger:#ef4444; --success:#07c160;
+  --radius:12px; --shadow:0 1px 2px rgba(20,24,40,.04),0 6px 20px rgba(20,24,40,.06);
+  --bg-secondary:#fff; --bg-tertiary:#f1f2f6; --bg-hover:#f5f6fa;
+  --msg-bot:#d6f5de;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:#f3f4f8;color:var(--text);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column}
+.topbar{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;height:56px;padding:0 18px;background:rgba(255,255,255,.9);backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--border)}
+.topbar-left{display:flex;align-items:center;gap:10px;min-width:0}
+.topbar-title{font-size:17px;font-weight:700;white-space:nowrap}
+/* 连接状态点（标题右侧，绿=已连接 / 红=未连接） */
+.topbar .conn-dot{width:9px;height:9px;border-radius:50%;background:var(--danger);flex-shrink:0;box-shadow:0 0 0 3px rgba(239,68,68,.16);transition:.2s}
+.topbar .conn-dot.on{background:var(--success);box-shadow:0 0 0 3px rgba(7,193,96,.18)}
+.topbar .sb-sel{font-size:13px;font-weight:600;color:var(--text);border:1px solid var(--border);border-radius:9px;padding:6px 10px;background:#fff;outline:none;cursor:pointer;max-width:46vw}
+.topbar .hint{font-size:12px;color:var(--text2)}
+.content{max-width:1180px;margin:0 auto;padding:18px 16px 18px;flex:1;display:flex;flex-direction:column;min-height:0}
+/* 嵌入到 web 控制台 iframe 时，占满 iframe 宽度，避免内容居中导致右侧留白 */
+.embedded .content{max-width:100%;margin:0}
+.split{display:flex;gap:18px;align-items:stretch;flex:1;min-height:0}
+.split>.preview{flex:1 1 480px;min-width:0;min-height:0;display:flex}
+.split>.preview>.section{flex:1;min-width:0;min-height:0;display:flex}
+@media (max-width:900px){.split{flex-direction:column;align-items:stretch}.split>.preview{width:100%}}
+@media (max-width:768px){
+  .content{padding:0;max-width:100%}
+  .topbar{padding:0 12px}
+  .topbar .sb-sel{max-width:40vw}
+  .split{gap:0}
+  .split>.preview{width:100%;padding:0}
+  .section{border-radius:0;border-left:none;border-right:none;padding:0}
+  .seg{margin:10px 12px 12px;max-width:none}
+  .phone{border-radius:0;flex:1;min-height:0;height:auto;border-left:none;border-right:none}
+}
+.section{background:transparent;border:none;box-shadow:none;border-radius:0;padding:0}
+/* 沙盒切换下拉选择器（对齐 menuPanel .drop 风格） */
+.drop{position:relative;flex:none}
+.drop .trigger{cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 14px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:14px;font-weight:500;min-width:148px;transition:.15s;box-shadow:0 1px 2px rgba(20,24,40,.03)}
+.drop .trigger:hover{border-color:#cdd2e0}
+.drop .trigger::after{content:"▾";color:var(--text2);font-size:12px;margin-left:auto}
+.drop.open .trigger::after{content:"▴"}
+.drop-panel{position:absolute;top:calc(100% + 8px);right:0;z-index:50;min-width:168px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);padding:6px;display:none;overflow:hidden}
+.drop.open .drop-panel{display:block;animation:pop2 .16s ease}
+.drop-panel .opt{padding:10px 12px;border-radius:9px;cursor:pointer;font-size:13px;transition:.12s}
+.drop-panel .opt:hover{background:#f5f7fe}
+.drop-panel .opt.active{background:var(--accent-weak);color:var(--accent);font-weight:600}
+.box-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
+.section-title{font-size:15px;font-weight:700;margin-bottom:12px}
+.field{margin-bottom:12px}
+.field>label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:5px}
+.field input,.field textarea,.field select{width:100%;border:1px solid var(--border);border-radius:9px;padding:8px 11px;font-size:13px;font-family:inherit;background:#fff;color:var(--text);outline:none;transition:.15s}
+.field input:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-weak)}
+.field textarea{resize:vertical;min-height:64px}
+.btn{background:var(--accent);color:#fff;border:none;padding:9px 16px;border-radius:10px;font-size:13px;cursor:pointer;font-weight:600;transition:.15s;box-shadow:0 2px 8px rgba(79,110,247,.25)}
+.btn:hover{filter:brightness(1.05)}
+.btn.ghost{background:#eef0f7;color:var(--text);box-shadow:none}
+.btn.sm{padding:6px 12px;font-size:12px}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tab{padding:8px 16px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:13px;font-weight:600;cursor:pointer;color:var(--text2)}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* 手机预览（对齐 menuPanel 预览风格） */
+.phone{border:1px solid var(--border);border-radius:22px;overflow:hidden;background:#eef0f4;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;width:100%;flex:1;min-height:0;height:auto;position:relative}
+/* 顶部栏：左返回 / 中信息(头像+名称) / 右三横菜单 */
+.phone-bar{background:var(--card);color:#1f2430;display:flex;align-items:center;justify-content:space-between;padding:9px 12px;font-weight:600;border-radius:21px 21px 0 0}
+.phone-bar .bar-left{display:flex;align-items:center;gap:10px;min-width:0}
+.phone-bar .bar-ico{width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:#3a3f4b;cursor:pointer;opacity:.9;transition:.15s;flex-shrink:0}
+.phone-bar .bar-ico:hover{opacity:1;color:var(--accent)}
+.phone-bar .bar-ico svg{width:22px;height:22px}
+.phone-bar .bar-avatar{width:34px;height:34px;border-radius:50%;background:var(--accent-weak);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;overflow:hidden}
+.phone-bar .bar-avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover}
+.phone-bar .bar-info{min-width:0;line-height:1.25}
+.phone-bar .bar-name{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.phone-bar .bar-sub{font-size:11px;color:var(--text2);font-weight:500}
+.phone-bar .bar-bot{width:18px;height:18px;border-radius:5px;object-fit:contain;flex-shrink:0;background:transparent;border:none;margin-left:6px;vertical-align:middle}
+.phone-bar .bar-status{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:500;color:#07c160}
+.phone-bar .status-dot{width:7px;height:7px;border-radius:50%;background:#07c160;flex-shrink:0;box-shadow:0 0 0 2px rgba(7,193,96,.18)}
+.phone-bar .bar-arrow{color:#bcc1cc;font-weight:700;margin-left:2px}
+/* 聊天区 */
+.phone-body{flex:1;overflow:auto;padding:14px 10px;background:linear-gradient(180deg,#f7f8fa,#eef0f4);position:relative}
+/* 底部栏：工具栏 + 输入行 */
+.phone-foot{border-top:1px solid var(--border);background:var(--card);padding:8px 12px 12px;border-radius:0 0 21px 21px;flex-shrink:0}
+.phone-tool{display:flex;justify-content:space-around;padding:4px 4px 10px}
+.phone-tool .tool-ico{width:22px;height:22px;color:#aab0c0;cursor:pointer;transition:.15s;display:flex;align-items:center;justify-content:center}
+.phone-tool .tool-ico:hover{color:var(--accent)}
+.phone-tool .tool-ico svg{width:22px;height:22px}
+/* 输入行：+ 按钮 / 输入框 / 发送按钮 垂直居中齐平 */
+.phone-input{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.phone-input .plus{flex-shrink:0;width:34px;height:34px;border-radius:50%;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text2);cursor:pointer;background:#fff;transition:.15s}
+.phone-input .plus:hover{background:var(--accent-weak);color:var(--accent);border-color:var(--accent)}
+.phone-input .editor{flex:1;min-width:0}
+.phone-input textarea{width:100%;border:1px solid var(--border);border-radius:18px;padding:9px 14px;font-size:13px;font-family:inherit;resize:none;max-height:120px;outline:none;background:#f7f8fb}
+.phone-input textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-weak)}
+.phone-input .send{flex-shrink:0;width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;border:none;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:.15s}
+.phone-input .send:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.phone-input .send:disabled{opacity:.5}
+/* 加号弹窗覆盖层：相对 .phone 定位，覆盖聊天区可视范围（不含顶部栏/底部栏），不随消息滚动 */
+.phone-overlay{position:absolute;top:53px;bottom:99px;left:0;right:0;z-index:60;pointer-events:none}
+.phone-overlay.show{pointer-events:auto}
+.plus-mask{position:absolute;inset:0;z-index:60;background:rgba(0,0,0,.28);opacity:0;visibility:hidden;transition:.18s;pointer-events:auto}
+.plus-mask.show{opacity:1;visibility:visible}
+/* 弹窗定位在 phone-body 内：贴底、从底部往上弹，高度随内容自适应，最多充满 body，超出滚动；不遮挡顶部栏与底部栏 */
+.plus-pop{position:absolute;left:0;right:0;bottom:14px;top:auto;z-index:61;background:#fff;border-radius:14px;box-shadow:0 -6px 24px rgba(0,0,0,.18);padding:12px 12px calc(12px + env(safe-area-inset-bottom));overflow-y:auto;max-height:calc(100% - 28px);height:auto;display:flex;flex-direction:column;opacity:0;transform:translateY(12px);transition:.18s ease;visibility:hidden;pointer-events:auto}
+.plus-pop.show{opacity:1;transform:translateY(0);visibility:visible}
+.plus-pop.show{opacity:1;transform:scale(1);visibility:visible}
+.plus-pop .pp-title{font-size:13px;font-weight:700;color:var(--text2);padding:4px 6px 10px;text-align:center;position:sticky;top:0;background:#fff}
+.plus-pop .pp-group{display:flex;align-items:baseline;gap:8px;margin:10px 4px 4px;font-size:13px;font-weight:700;color:var(--text)}
+.plus-pop .pp-group:first-of-type{margin-top:2px}
+.plus-pop .pp-group-sub{font-size:11px;font-weight:500;color:var(--text2)}
+.plus-pop .pp-item{padding:13px 14px;border-radius:12px;cursor:pointer;font-size:15px;display:flex;align-items:center;gap:12px;transition:.12s}
+.plus-pop .pp-item:hover{background:var(--accent-weak);color:var(--accent)}
+.plus-pop .pp-item .ico{width:20px;text-align:center}
+.muted{color:var(--text2);font-size:12px;line-height:1.6}
+/* 上下文配置弹出层（右上角齿轮触发，对齐 menuPanel 浮层风格） */
+.ctx-pop{position:absolute;top:52px;right:12px;width:300px;max-width:calc(100% - 24px);z-index:62;background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);padding:14px 14px 12px;display:none;overflow:auto}
+.ctx-pop.show{display:block;animation:pop2 .16s ease}
+@keyframes pop2{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.ctx-pop-head{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:700;color:#1f2430;padding:2px 4px 10px}
+.ctx-row{display:flex;gap:10px}
+.ctx-pop .field{margin-bottom:10px}
+.ctx-pop .field>label{font-size:11px}
+.toast{position:fixed;right:18px;bottom:18px;z-index:9999;background:#1f2430;color:#fff;padding:11px 16px;border-radius:10px;font-size:13px;opacity:0;transform:translateY(8px);transition:.18s;pointer-events:none}
+.toast.show{opacity:1;transform:none}
+.toast.err{background:var(--danger)}
+.hidden{display:none!important}
+.msg-avatar-text{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;background:var(--accent-weak);color:var(--accent);font-size:16px;flex-shrink:0}
+/* ===== 消息气泡（内联，避免依赖外部 style.css） ===== */
+.msg-item{display:flex;gap:8px;margin:12px 0;align-items:flex-start;width:100%}
+.msg-item.msg-self{justify-content:flex-end;margin-right:0}
+.msg-avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0;background:var(--accent-weak);display:block}
+.msg-avatar-user{display:flex;align-items:center;justify-content:center;color:var(--accent)}
+.msg-avatar-user svg{width:20px;height:20px}
+.msg-body{display:flex;flex-direction:column;max-width:76%;min-width:0}
+.msg-self .msg-body{align-items:flex-end;max-width:100%}
+.msg-sender{font-size:11px;color:var(--text2);margin-bottom:3px;white-space:nowrap}
+.msg-bubble-row{display:flex}
+.msg-bubble{background:#fff;border:1px solid var(--border);border-radius:12px;padding:8px 12px;font-size:13px;line-height:1.5;word-break:break-word;box-shadow:0 1px 2px rgba(20,24,40,.04)}
+.msg-self .msg-bubble{background:var(--accent-weak);color:var(--text);border-color:#d8def7}
+.msg-time-inline{font-size:10px;color:var(--text2);margin-left:6px;font-weight:400}
+.msg-notice{display:flex;justify-content:center;margin:10px 0}
+.msg-notice-pill{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.05);border-radius:14px;padding:5px 12px;max-width:88%}
+.msg-notice-avatar{width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.msg-notice-time{font-size:10px;color:var(--text2);flex-shrink:0}
+.msg-notice-text{font-size:12px;color:var(--text2);line-height:1.4}
+.msg-inline-media{max-width:200px;border-radius:8px;margin:2px 0;cursor:pointer;display:block}
+.msg-attachments{margin-top:4px}
+.msg-attachment-img{width:100%;border-radius:10px;cursor:pointer}
+.msg-attachment-audio-wrap{display:flex;flex-direction:column;gap:4px}
+.msg-attachment-file{color:var(--accent);font-size:13px}
+.audio-asr{font-size:11px;color:var(--text2)}
+.msg-at-capsule{color:var(--accent);background:var(--accent-weak);border-radius:6px;padding:0 4px;font-size:12px}
+.md-btn{display:inline-block}
+.md-pre{background:var(--bg-tertiary);padding:8px 10px;border-radius:8px;overflow:auto;font-size:12px}
+.md-inline-code{background:var(--bg-tertiary);padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-title">沙盒模拟</div>
+    <span class="conn-dot" id="connDot" title="未连接"></span>
+  </div>
+  <div class="drop" id="sbDrop">
+    <div class="trigger" id="sbTrigger" onclick="toggleSbDrop()">群沙盒</div>
+    <div class="drop-panel" id="sbPanel">
+      <div class="opt active" data-sb="group" onclick="switchSandbox('group')">群沙盒</div>
+      <div class="opt" data-sb="private" onclick="switchSandbox('private')">私信沙盒</div>
+    </div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="split">
+    <div class="preview">
+      <div class="section" style="padding:0;overflow:hidden">
+        <div class="phone">
+          <div class="phone-bar">
+            <div class="bar-left">
+              <span class="bar-ico" id="backBtn" title="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span>
+              <div class="bar-avatar" id="phoneAvatar">👥</div>
+              <div class="bar-info">
+                <div class="bar-name" id="phoneName">沙盒测试群</div>
+                <div class="bar-sub" id="phoneSub">group · FFFF…FFFF</div>
+              </div>
+            </div>
+            <span class="bar-ico" id="ctxBtn" title="设置">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+            </span>
+            <div class="ctx-pop" id="ctxPop">
+              <div class="ctx-pop-head">上下文配置</div>
+              <div class="field">
+                <label>群 ID（group_openid，32 位，默认全 F）</label>
+                <input id="grpId" value="FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF" maxlength="32" oninput="onCtxChange()">
+              </div>
+              <div class="field">
+                <label>用户 ID（user_openid，32 位，默认全 F）</label>
+                <input id="usrId" value="FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE" maxlength="32" oninput="onCtxChange()">
+              </div>
+              <div class="ctx-row">
+                <div class="field" style="flex:1">
+                  <label>用户名（昵称）</label>
+                  <input id="usrName" value="测试用户" oninput="onCtxChange()">
+                </div>
+                <div class="field" style="flex:1">
+                  <label>群名称</label>
+                  <input id="grpName" value="沙盒测试群" oninput="onCtxChange()">
+                </div>
+              </div>
+              <div class="muted" style="margin-top:2px">
+                消息与通知以 <code>qqbot_msg</code> / <code>qqbot_notice</code> 下发，<b>真实触发插件</b>；回复经 WS 回流显示。
+              </div>
+              <button class="btn ghost" style="width:100%;margin-top:10px" onclick="clearChat()">清空当前对话</button>
+            </div>
+          </div>
+          <div class="phone-body" id="chatScroll">
+            <div class="chat-list" id="chatList"></div>
+          </div>
+          <div class="phone-foot">
+            <div class="phone-input">
+              <div class="editor">
+                <textarea id="quickInput" rows="1" placeholder="输入用户要发送的内容（回车发送，触发插件）…" onkeydown="onQuickKey(event)"></textarea>
+              </div>
+              <div class="plus" id="plusBtn" title="其他通知 / 请求">+</div>
+              <button class="send" id="quickSend" onclick="sendQuick()" title="发送">➤</button>
+            </div>
+            <div class="phone-tool">
+              <span class="tool-ico" title="语音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg></span>
+              <span class="tool-ico" title="图片"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5-5L5 20"/></svg></span>
+              <span class="tool-ico" title="拍摄"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></span>
+              <span class="tool-ico" title="表情"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></span>
+              <span class="tool-ico" title="更多"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span>
+            </div>
+          </div>
+          <div class="phone-overlay">
+            <div class="plus-mask" id="plusMask" onclick="togglePlus(false)"></div>
+            <div class="plus-pop" id="plusPop">
+              <div class="pp-title">模拟系统通知 / 事件</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===================== 工具 ===================== */
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+// 计算 base path（优先取父页面通过 ?__webBase= 传入的真实部署路径）
+function getBase(){
+  try{
+    var q=new URLSearchParams(location.search)
+    var wb=q.get('__webBase')
+    if(wb)return wb.charAt(0)==='/'?wb:'/'+wb
+  }catch(e){}
+  var p=location.pathname.split('/').filter(Boolean)
+  return '/'+(p[0]||'qqbot-web')
+}
+function toast(msg,err){var t=document.getElementById('toast');t.textContent=msg;if(err)t.classList.add('err');else t.classList.remove('err');t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove('show')},2200)}
+function $(s){return document.querySelector(s)}
+function $$(s){return Array.prototype.slice.call(document.querySelectorAll(s))}
+function fmtTime(ts){if(!ts)ts=Date.now()/1000;ts=ts<1e12?ts*1000:ts;var d=new Date(ts);var p=function(n){return String(n).padStart(2,'0')};return p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())}
+function shortId(id){id=id||'';return id.length>8?id.slice(0,4)+'…'+id.slice(-4):id}
+
+var SANDBOX_ID='QQBotSandbox', SEP=':'
+// bot 头像静态资源端点（WebAdapter 约定：/api/web-page/<插件名>/public/...）
+var BOT_IMG=getBase()+'/api/web-page/QQBot-Web-Adapter/public/bot.png'
+// 用户（自己/对方）头像图标，风格对齐底部工具栏
+var USER_ICON_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
+function fullGroupId(g){return g.indexOf(SANDBOX_ID+SEP)===0?g:SANDBOX_ID+SEP+g}
+function fullUserId(u){return u.indexOf(SANDBOX_ID+SEP)===0?u:SANDBOX_ID+SEP+u}
+
+/* ===================== 状态 ===================== */
+var cur='group'
+var SB={
+  group:{msgs:[]},
+  private:{msgs:[]}
+}
+function ctx(){return SB[cur]}
+function cfg(){
+  return {
+    groupId:document.getElementById('grpId').value.trim()||'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
+    userId:document.getElementById('usrId').value.trim()||'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE',
+    userName:document.getElementById('usrName').value.trim()||'测试用户',
+    groupName:document.getElementById('grpName').value.trim()||'沙盒测试群',
+    groupWatch:fullGroupId(document.getElementById('grpId').value.trim()||'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'),
+    userWatch:fullUserId(document.getElementById('usrId').value.trim()||'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE')
+  }
+}
+function onCtxChange(){
+  refreshPhoneBar()
+  // 重新订阅 WS 频道（先 unwatch 旧的，再 watch 新的由 wsState 处理）
+  resubscribe()
+  renderChat()
+}
+
+/* ===================== 渲染：消息气泡 ===================== */
+function renderChat(){
+  var box=document.getElementById('chatList');box.innerHTML=''
+  var arr=ctx().msgs
+  for(var i=0;i<arr.length;i++){box.appendChild(buildMsgEl(arr[i]))}
+  var scr=document.getElementById('chatScroll');scr.scrollTop=scr.scrollHeight
+}
+function isNoticeMsg(m){return m&&(m.post_type==='notice'||m.is_notice)}
+function buildMsgEl(m){
+  if(isNoticeMsg(m)){
+    var div=document.createElement('div')
+    div.className='msg-item msg-notice'
+    var txt=m.text||(m.message&&m.message[0]&&m.message[0].text)||''
+    div.innerHTML='<div class="msg-notice-pill"><span class="msg-notice-time">'+fmtTime(m.timestamp)+'</span>'+
+      '<div class="msg-notice-body">'+(m.avatar?'<img class="msg-notice-avatar" src="'+esc(m.avatar)+'" onerror="this.style.display=\'none\'">':'')+
+      '<span class="msg-notice-text">'+esc(txt)+'</span></div></div>'
+    return div
+  }
+  var isBot=!!m.is_bot
+  // bot 回复一律显示在左侧；用户（me）发送显示在右侧
+  var isSelf=!isBot && !!m.me
+  var div=document.createElement('div')
+  div.className='msg-item '+(isSelf?'msg-self':'')+' '+(isBot?'is-bot':'')
+  // 强制靠右 + 头像在右（QQ 自己消息）：正常 row + justify-content:flex-end（整组贴右），
+  // DOM 顺序改为 body→avatar，使头像在最右贴边、气泡紧挨头像（避免 row-reverse 主轴反转歧义）。
+  if(isSelf){ div.style.flexDirection='row'; div.style.justifyContent='flex-end' }
+  // 头像：bot 用 web 静态 bot 头像；用户/对方用消息自带头像或昵称首字
+  var avatarUrl = isBot ? BOT_IMG : (m.avatar||'')
+  var avatarHtml
+  if(avatarUrl){
+    avatarHtml='<img class="msg-avatar" src="'+esc(avatarUrl)+'" alt="" onerror="this.style.display=\'none\'">'
+  }else{
+    avatarHtml='<div class="msg-avatar msg-avatar-user">'+USER_ICON_SVG+'</div>'
+  }
+  var nick=esc(m.nickname||m.user_id||'未知')
+  var time=fmtTime(m.timestamp)
+  var R=renderContent(m)
+  var bodyHtml=
+    '<div class="msg-body">'+
+      '<div class="msg-sender">'+nick+(isBot?' <span style="font-size:10px;color:var(--success)">[Bot]</span>':'')+' <span class="msg-time-inline">'+time+'</span></div>'+
+      (R.content?'<div class="msg-bubble-row"><div class="msg-bubble">'+R.content+'</div></div>':'')+
+      (R.attach||'')+
+    '</div>'
+  // 自己发的消息：body 在前、头像在后（配合 row+flex-end → 头像贴最右、气泡紧挨头像贴右）
+  div.innerHTML = isSelf ? (bodyHtml+avatarHtml) : (avatarHtml+bodyHtml)
+  return div
+}
+// 将插件回复中的图片/媒体原始地址统一改写为沙盒媒体端点（兼容外部 CDN 代理与本地 data/imgs 安全服务）
+// 将 Node Buffer（经 JSON 序列化后为 {type:'Buffer',data:[...]}）还原为前端可用的 data URL
+function bufferToDataUrl(buf){
+  try{
+    var arr = (buf && buf.type==='Buffer' && Array.isArray(buf.data)) ? buf.data : (Array.isArray(buf)?buf:null)
+    if(!arr) return ''
+    var bin=''
+    for(var i=0;i<arr.length;i++) bin += String.fromCharCode(arr[i])
+    return 'data:image/png;base64,' + btoa(bin)
+  }catch(e){ return '' }
+}
+function mediaUrl(iu){
+  // 兼容图片以 Buffer 对象（{type:'Buffer',data:[...]}）形式传入的情况
+  if(iu && typeof iu==='object'){
+    if(iu.type==='Buffer' || Array.isArray(iu.data)) return bufferToDataUrl(iu)
+    // 也可能是 {file:..., url:...} 嵌套对象，尝试取其字符串字段
+    if(typeof iu.file==='string') return mediaUrl(iu.file)
+    if(typeof iu.url==='string') return mediaUrl(iu.url)
+    return ''
+  }
+  if(!iu||typeof iu!=='string')return ''
+  // 已是本适配器沙盒媒体端点 → 原样返回（补齐 base 前缀以适配反向代理部署）
+  if(iu.indexOf('/qqbot-sandbox/media')>=0){
+    return iu.charAt(0)==='/'?iu:getBase()+'/api/'+iu.replace(/^\/+/,'')
+  }
+  // 形如 /xxx/api/bot/.../local-media?path=... 的旧端点 → 提取 path 改用沙盒端点
+  if(iu.indexOf('local-media')>=0){
+    try{
+      var up=new URL(iu, location.origin)
+      var p=up.searchParams.get('path')
+      if(p) return getBase()+'/api/qqbot-sandbox/media?path='+encodeURIComponent(p)
+    }catch(e){}
+    return iu
+  }
+  // 绝对 http(s) 外链 → 走代理
+  if(/^https?:\/\//i.test(iu)) return getBase()+'/api/qqbot-sandbox/media?url='+encodeURIComponent(iu)
+  // 本地文件系统绝对路径（如 /abs/path.png 或 Windows C:\x\y.png）→ 转 file:// 直接访问
+  if(/^([a-zA-Z]:[\\/]|\/)/.test(iu)){
+    var fp=iu.replace(/\\/g,'/')
+    if(/^[a-zA-Z]:\//.test(fp)) return 'file:///'+fp
+    return 'file://'+fp
+  }
+  // 其余本地相对路径（如 data/imgs/xxx.png 或纯文件名）→ 本地服务
+  if(iu.charAt(0)==='/') return iu
+  return getBase()+'/api/qqbot-sandbox/media?path='+encodeURIComponent(iu)
+}
+function renderContent(m){
+  // 仅 bot 消息（is_bot:true）的文本段做 markdown 解析（[原图](mqqapi://...) / ![img](url) 等）；
+  // 测试用户（me）的纯文本不做解析。用户要求：只要是文本（裸字符串段 / text 段）都要解析，不限于 markdown 类型。
+  var isBot=!!m.is_bot
+  // bot 可能直接下发整段 markdown 字符串（而非 segment 数组）
+  if(typeof m.message==='string' && m.message.trim()){
+    return {content:isBot?parseMd(m.message):esc(m.message),attach:''}
+  }
+  if(typeof m.content==='string' && m.content.trim() && !Array.isArray(m.message)){
+    return {content:isBot?parseMd(m.content):esc(m.content),attach:''}
+  }
+  var segs=Array.isArray(m.message)?m.message:[]
+  var content='',att=[]
+  for(var i=0;i<segs.length;i++){
+    var seg=segs[i]
+    // 裸字符串或 Buffer 段：插件常把 base64 图片或纯文本直接混入数组（如 relife 的 result.base64 / '\r'）
+    if(typeof seg==='string'){
+      if(/^data:image\//i.test(seg)){content+='<img class="msg-inline-media" src="'+esc(seg)+'" style="max-width:200px;border-radius:8px;margin:2px 0;cursor:pointer" onclick="window.open(this.src)">'}
+      else if(/^[A-Za-z0-9+/]{100,}={0,2}$/.test(seg.trim())){content+='<img class="msg-inline-media" src="data:image/png;base64,'+esc(seg.trim())+'" style="max-width:200px;border-radius:8px;margin:2px 0;cursor:pointer" onclick="window.open(this.src)">'}
+      else {
+        var t=seg.replace(/\r/g,'\n')
+        if(t.trim()){
+          // bot 文本段整体按 markdown 解析（含裸字符串里的 [原图](mqqapi://...) 等）
+          content+=isBot?parseMd(t):esc(t).replace(/\n/g,'<br>')
+        }
+      }
+      continue
+    }
+    // 裸 Buffer 对象（base64 图片经 JSON 后为 {type:'Buffer',data:[数字...]}）
+    if(seg && typeof seg==='object' && (seg.type==='Buffer' || (Array.isArray(seg.data) && typeof seg.data[0]==='number' && !seg.type))){
+      var durl=bufferToDataUrl(seg)
+      if(durl)content+='<img class="msg-inline-media" src="'+esc(durl)+'" style="max-width:200px;border-radius:8px;margin:2px 0;cursor:pointer" onclick="window.open(this.src)">'
+      continue
+    }
+    if(seg.type==='text'||seg.type==='plain'){content+=isBot?parseMd(seg.text||''):esc(seg.text||'')}
+    else if(seg.type==='markdown'){
+      var md=seg.data
+      if(md&&typeof md==='object')md=md.content||md.markdown||''
+      md=md||seg.content||seg.markdown||seg.text||''
+      content+=parseMd(md)
+    }
+    else if(seg.type==='at'){
+      var uid=(seg.qq||'').indexOf(':')>=0?seg.qq.split(':').pop():seg.qq||''
+      var nickn=seg.nickname||seg.name||(uid.length>12?uid.slice(0,8)+'…':uid)
+      content+='<span class="msg-at-capsule" title="@'+esc(uid)+'">@'+esc(nickn)+'</span>'
+    }
+    else if(seg.type==='image'){var iu=seg.file||seg.url||'';if(iu){iu=mediaUrl(iu);content+='<img class="msg-inline-media" src="'+esc(iu)+'" style="max-width:180px;border-radius:8px;margin:2px 0;cursor:pointer" onclick="window.open(this.src)">'}}
+    else if(seg.type==='ark'){content+=renderArk(seg)}
+    else if(seg.type==='button'){content+=renderButtons(seg.buttons||seg.data)}
+    else if(seg.type==='keyboard'){content+=renderButtons((seg.content&&seg.content.rows)||seg.buttons||seg.data)}
+    if(['video','audio','record','voice','file'].indexOf(seg.type)>=0){
+      var u=seg.file||seg.url||''
+      if(u){var ct=seg.type==='video'?'video/mp4':seg.type==='file'?'application/octet-stream':'audio/amr';att.push(renderAtt({content_type:ct,url:u,filename:seg.name||'文件',asr_refer_text:seg.asr_refer_text||''}))}
+    }
+  }
+  return {content:content,attach:att.join('')}
+}
+function renderAtt(att){
+  var mime=att.content_type||''
+  var u=mediaUrl(att.url)||att.url
+  if(mime.indexOf('image/')===0)return '<div class="msg-attachments"><div class="msg-attachment-img-wrap"><img class="msg-attachment-img" src="'+esc(u)+'" onclick="window.open(\''+esc(u)+'\')"></div></div>'
+  if(mime.indexOf('audio/')===0||mime==='voice')return '<div class="msg-attachments"><div class="msg-attachment-audio-wrap"><audio controls src="'+esc(u)+'" style="width:200px"></audio>'+(att.asr_refer_text?'<div class="audio-asr">转文字: '+esc(att.asr_refer_text)+'</div>':'')+'</div></div>'
+  if(mime.indexOf('video/')===0)return '<div class="msg-attachments"><video controls src="'+esc(u)+'" style="max-width:220px;border-radius:10px"></video></div>'
+  return '<div class="msg-attachments"><a class="msg-attachment-file" href="'+esc(u)+'" target="_blank">📎 '+esc(att.filename||'下载文件')+'</a></div>'
+}
+function renderArk(seg){
+  var tpl=seg.template_id,kv=seg.kv||[],map={}
+  kv.forEach(function(k){if(k.key&&k.key!=='#LIST#')map[k.key]=k.value})
+  if(tpl===23){
+    var list='',l=kv.filter(function(k){return k.key==='#LIST#'})[0]
+    if(l&&Array.isArray(l.obj))list=l.obj.map(function(o){var d=(o.obj_kv||[]).filter(function(x){return x.key==='desc'})[0];var lk=(o.obj_kv||[]).filter(function(x){return x.key==='link'})[0];return '<div style="padding:5px 0;border-top:1px solid #eee;font-size:13px">'+(d?esc(d.value):'')+(lk&&lk.value?' <a href="'+esc(lk.value)+'" style="color:var(--accent)">↗</a>':'')+'</div>'}).join('')
+    return '<div style="background:#fff;border:1px solid #e7e9f0;border-radius:10px;padding:10px 12px;min-width:200px"><div style="font-size:12px;color:#888">'+esc(map['#PROMPT#']||'')+'</div><div style="font-size:14px;font-weight:600;margin:4px 0">'+esc(map['#DESC#']||'')+'</div>'+list+'</div>'
+  }
+  if(tpl===24){
+    var arkImg=map['#IMG#']?mediaUrl(map['#IMG#']):''
+    return '<div style="background:#fff;border:1px solid #e7e9f0;border-radius:10px;overflow:hidden;min-width:200px">'+(arkImg?'<img src="'+esc(arkImg)+'" style="width:100%;max-height:140px;object-fit:cover" onerror="this.style.display=\'none\'">':'')+'<div style="padding:10px 12px"><div style="font-size:15px;font-weight:700">'+esc(map['#TITLE#']||'')+'</div><div style="font-size:12px;color:#888;margin-top:3px">'+esc(map['#SUBTITLE#']||'')+'</div><div style="font-size:13px;margin-top:4px">'+esc(map['#DESC#']||'')+'</div><div style="font-size:12px;color:var(--accent);margin-top:4px">'+esc(map['#PROMPT#']||'')+'</div></div></div>'
+  }
+  if(tpl===37){
+    return '<div style="background:#fff;border:1px solid #e7e9f0;border-radius:10px;overflow:hidden;min-width:200px">'+(map['#METACOVER#']?'<img src="'+esc(map['#METACOVER#'])+'" style="width:100%;max-height:120px;object-fit:cover" onerror="this.style.display=\'none\'">':'')+'<div style="padding:10px 12px"><div style="font-size:14px;font-weight:700">'+esc(map['#METATITLE#']||'')+'</div><div style="font-size:13px;color:#555">'+esc(map['#METASUBTITLE#']||'')+'</div><div style="font-size:12px;color:#888;margin-top:3px">'+esc(map['#PROMPT#']||'')+'</div></div></div>'
+  }
+  return '<div style="background:#fff;border:1px solid #e7e9f0;border-radius:10px;padding:10px">Ark 模板 '+esc(tpl)+'</div>'
+}
+// 从 bot 键盘按钮对象中递归提取 mqqapi://aio/inlinecmd 的 command/enter
+function extractInlineCmd(b){
+  var cmd=null,enter=false
+  function walk(o){
+    if(typeof o==='string'){
+      var m=o.match(/mqqapi:\/\/aio\/inlinecmd\?(.*)/i)
+      if(m){var q=new URLSearchParams(m[1]);cmd=(q.get('command')||'').replace(/\+/g,' ');var e=q.get('enter');if(e!==null)enter=e.toLowerCase()==='true'}
+    } else if(o&&typeof o==='object'){
+      for(var k in o){ if(k==='enter'&&typeof o[k]==='boolean'&&cmd!==null)enter=o[k]; walk(o[k]) }
+    }
+  }
+  walk(b)
+  return cmd!==null?{command:cmd,enter:enter}:null
+}
+// 提取按钮动作：返回 {fill, send} 或可点击信息；null 表示普通按钮
+function btnAction(b){
+  var ic=extractInlineCmd(b)
+  if(ic)return {fill:ic.command, send:ic.enter}              // mqqapi inlinecmd
+  if(typeof b.input==='string')return {fill:b.input, send:b.send===true} // {input:'原图', send:false}
+  if(b.callback && b.toCallback)return {fill:b.callback, send:true}      // 回调按钮，点击填入并发送
+  return null
+}
+function renderButtons(data){
+  if(!Array.isArray(data))return ''
+  // 兼容两种按钮格式：
+  //   1) Yunzai 通用 segment.button → data 为二维数组，每项含 .text / .label / .input / .callback
+  //   2) QQBot 标准 → data 为按钮数组（或 seg.buttons），每项含 .render_data.label
+  var rows=data.map(function(row){
+    if(!Array.isArray(row))row=[row]
+    return '<div style="display:flex;gap:6px;margin-top:6px">'+row.map(function(b){
+      if(!b)return '<span style="flex:1"></span>'
+      var label=(b.render_data&&b.render_data.label)||b.text||b.label||'按钮'
+      var act=btnAction(b)
+      if(act){
+        // 可点击动作按钮：蓝字，点击填入输入框，send 为 true 直接发送（不引用原消息）
+        return '<span class="md-btn md-link-inlinecmd" data-cmd="'+esc(act.fill)+'" data-enter="'+act.send+'" style="flex:1;text-align:center;background:var(--accent-weak);color:var(--accent);border-radius:8px;padding:7px 6px;font-size:13px;font-weight:600;cursor:pointer">'+esc(label)+'</span>'
+      }
+      return '<span class="md-btn" style="flex:1;text-align:center;background:var(--accent-weak);color:var(--accent);border-radius:8px;padding:7px 6px;font-size:13px;font-weight:600;cursor:pointer" onclick="toast(\'点击按钮: '+esc(label)+'\')">'+esc(label)+'</span>'
+    }).join('')+'</div>'
+  }).join('')
+  return '<div style="min-width:200px">'+rows+'</div>'
+}
+
+/* ===================== 迷你 Markdown 解析 ===================== */
+function parseMd(text){
+  if(!text)return ''
+  var blocks=[]
+  text=text.replace(/```[\s\S]*?```/g,function(m){var ph=' B'+blocks.length+' ';var code=m.replace(/^```[a-zA-Z]*\n?/,'')/*.replace(/\n$/,'')*/;blocks.push('<pre class="md-pre" style="background:var(--bg-tertiary);padding:8px 10px;border-radius:8px;overflow:auto;font-size:12px"><code>'+esc(code)+'</code></pre>');return ph})
+  var ic=[]
+  text=text.replace(/`[^`]+`/g,function(m){var ph=' I'+ic.length+' ';ic.push('<code class="md-inline-code">'+esc(m.slice(1,-1))+'</code>');return ph})
+  var lines=text.split('\n'),html='',inUl=false
+  function closeUl(){if(inUl){html+='</ul>';inUl=false}}
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i]
+    var mm=line.match(/^ B\d+ $/)
+    if(mm){closeUl();html+=blocks[+line.trim().slice(2,-1)];continue}
+    var h=line.match(/^(#{1,3})\s+(.*)$/)
+    if(h){closeUl();var lv=h[1].length;html+='<div style="font-weight:700;font-size:'+[17,15,14][lv-1]+'px;margin:4px 0">'+inline(esc(h[2]))+'</div>';continue}
+    if(/^>\s?/.test(line)){closeUl();html+='<div style="border-left:3px solid #cdd2e0;padding-left:8px;color:var(--text2);margin:3px 0">'+inline(esc(line.replace(/^>\s?/,'')))+'</div>';continue}
+    var li=line.match(/^[-*]\s+(.*)$/)
+    if(li){if(!inUl){html+='<ul style="margin:3px 0;padding-left:20px">';inUl=true}html+='<li>'+inline(esc(li[1]))+'</li>';continue}
+    if(line.trim()===''){closeUl();continue}
+    closeUl();html+='<div style="margin:2px 0">'+inline(esc(line))+'</div>'
+  }
+  closeUl()
+  html=html.replace(/ I(\d+) /g,function(_,i){return ic[+i]})
+  html=html.replace(/ B(\d+) /g,function(_,i){return blocks[+i]})
+  return html
+}
+function inline(s){
+  // 图片 markdown: ![alt](url)，alt 可含 #宽px #高px 指定尺寸
+  s=s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,function(_,alt,url){
+    url=url.replace(/&amp;/g,'&').trim()
+    var dims=[],mm,re=/#(\d+)px/g;while((mm=re.exec(alt))){dims.push(+mm[1])}
+    var w=dims[0],h=dims[1]
+    var st='max-width:100%;border-radius:8px;margin:2px 0;cursor:pointer'
+    if(w)st+=';width:'+w+'px'; if(h)st+=';height:'+h+'px'
+    return '<img class="msg-inline-media" src="'+esc(url)+'" style="'+st+'" onclick="window.open(this.src)">'
+  })
+  // 链接 markdown: [文字](url)
+  s=s.replace(/\[([^\]]+)\]\(([^)]+)\)/g,function(_,txt,url){
+    url=url.replace(/&amp;/g,'&').trim()
+    if(/^https?:\/\//i.test(url)){
+      return '<a href="'+esc(url)+'" target="_blank" style="color:var(--accent)">'+txt+'</a>'
+    }
+    // QQ inlinecmd：点击将 command 填入输入框，enter=true 直接发送
+    var m=url.match(/^mqqapi:\/\/aio\/inlinecmd\?(.*)$/i)
+    if(m){
+      var q=new URLSearchParams(m[1])
+      var cmd=(q.get('command')||'').replace(/\+/g,' ')
+      var enter=(q.get('enter')||'').toLowerCase()==='true'
+      return '<span class="md-link-inlinecmd" data-cmd="'+esc(cmd)+'" data-enter="'+enter+'" style="color:var(--accent);cursor:pointer">'+txt+'</span>'
+    }
+    return '<a href="'+esc(url)+'" style="color:var(--accent)">'+txt+'</a>'
+  })
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+  s=s.replace(/(^|[^*])\*([^*]+)\*/g,'$1<em>$2</em>')
+  s=s.replace(/~~([^~]+)~~/g,'<del>$1</del>')
+  s=s.replace(/&lt;@([A-Fa-f0-9]+)&gt;/g,function(_,uid){return '<span class="msg-at-capsule" title="@'+esc(uid)+'">@'+esc(uid.slice(0,8)+'…')+'</span>'})
+  return s
+}
+// inlinecmd 链接点击：将 command 填入消息输入框，enter=true 时直接发送
+function runInlineCmd(cmd,enter){
+  var ta=document.getElementById('quickInput')
+  if(!ta)return
+  ta.value=cmd
+  ta.focus()
+  ta.dispatchEvent(new Event('input'))
+  if(enter)sendQuick()
+  else toast('已填入输入框：'+cmd)
+}
+// 事件委托：点击 inlinecmd 蓝字
+document.addEventListener('click',function(e){
+  var t=e.target.closest?e.target.closest('.md-link-inlinecmd'):null
+  if(t){runInlineCmd(t.getAttribute('data-cmd')||'',t.getAttribute('data-enter')==='true')}
+})
+
+/* ===================== 发送（触发真实插件） ===================== */
+// 去重：沙盒有主通道(父窗口 postMessage)与兜底 WS 两条接收链路，
+// 同一条 bot 回复可能经两条通道各到达一次，用 message_id 去重避免重复显示。
+var _shownMsgIds = new Set()
+function appendMsg(m){
+  var mid=m&&(m.message_id||(m.message&&m.message.message_id))
+  if(mid){ if(_shownMsgIds.has(mid))return; _shownMsgIds.add(mid) }
+  ctx().msgs.push(m);renderChat()
+}
+async function apiPost(route,body){
+  var r=await fetch(getBase()+'/api'+route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+  return r.json()
+}
+async function sendQuick(){
+  var t=document.getElementById('quickInput').value.trim()
+  if(!t){toast('请输入内容',true);return}
+  document.getElementById('quickInput').value='';document.getElementById('quickInput').style.height='auto'
+  var c=cfg()
+  // 用户消息先本地落一条（me:true 表示是「我/用户」发的，显示在右侧），随后插件回复经 WS 回流
+  appendMsg({me:true,is_bot:false,user_id:c.userWatch,nickname:c.userName,timestamp:Date.now()/1000,message:[{type:'text',text:t}]})
+  try{
+    var res=await apiPost('/qqbot-sandbox/send',{groupId:c.groupId,userId:c.userId,userName:c.userName,text:t,private:cur==='private'})
+    if(!res.ok)toast('发送失败: '+(res.error||''),true)
+  }catch(e){toast('发送请求失败: '+e.message,true)}
+}
+function onQuickKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendQuick()}}
+document.getElementById('quickInput').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(120,this.scrollHeight)+'px'})
+
+/* ===================== + 弹窗：其他通知 / 请求 ===================== */
+// 仅保留 QQBot 官方可接收的被动 notice 事件（对齐 QQBot-Plugin.makeNotice 的
+// notice_type / sub_type 组合）。群聊(group) 与 私信(friend) 分开两组。
+var NOTICES=[
+  // —— 群聊事件（notice.group.*） ——
+  {grp:'group',ico:'➕',label:'群成员入群',sub:'group/increase',noticeType:'group',subType:'increase',text:'测试用户 加入了群聊'},
+  {grp:'group',ico:'➖',label:'群成员退群',sub:'group/decrease',noticeType:'group',subType:'decrease',text:'测试用户 退出了群聊'},
+  {grp:'group',ico:'🤖',label:'机器人被拉入群',sub:'group/add',noticeType:'group',subType:'add',text:'测试用户 邀请 机器人 加入了群聊'},
+  {grp:'group',ico:'🚫',label:'机器人被移出群',sub:'group/del',noticeType:'group',subType:'del',text:'测试用户 将 机器人 移出了群聊'},
+  {grp:'group',ico:'🔄',label:'群信息更新',sub:'group/update',noticeType:'group',subType:'update',text:'群名称/群资料已更新'},
+  {grp:'group',ico:'📩',label:'加群申请',sub:'group/request',noticeType:'group',subType:'request',applySource:'group',verifyInfo:'我是来测试的',text:'测试用户 申请加入群聊，等待审核'},
+  // —— 私信（好友）事件（notice.friend.*） ——
+  {grp:'private',ico:'👥',label:'好友添加',sub:'friend/increase',noticeType:'friend',subType:'increase',text:'测试用户 已添加机器人为好友'},
+  {grp:'private',ico:'💔',label:'好友删除',sub:'friend/decrease',noticeType:'friend',subType:'decrease',text:'测试用户 删除了机器人'},
+  {grp:'private',ico:'✉️',label:'加好友申请',sub:'friend/request',noticeType:'friend',subType:'request',applySource:'friend',verifyInfo:'求通过',text:'测试用户 申请添加机器人为好友，等待审核'},
+]
+var NOTICE_GROUPS=[
+  {key:'group',title:'群聊事件',sub:'notice.group.*'},
+  {key:'private',title:'私信（好友）事件',sub:'notice.friend.*'},
+]
+function buildPlusPop(){
+  var p=document.getElementById('plusPop')
+  var html='<div class="pp-title">模拟系统通知 / 事件</div>'
+  // 仅显示当前沙盒类型对应的事件组：群沙盒→群聊事件，私信沙盒→私信事件
+  NOTICE_GROUPS.filter(function(g){return g.key===cur}).forEach(function(g){
+    html+='<div class="pp-group">'+g.title+'<span class="pp-group-sub">'+g.sub+'</span></div>'
+    NOTICES.filter(function(n){return n.grp===g.key}).forEach(function(n,i){
+      // 用全局索引定位，避免分组过滤后索引错位
+      var gi=NOTICES.indexOf(n)
+      html+='<div class="pp-item" onclick="notice(NOTICES['+gi+']);togglePlus(false)"><span class="ico">'+n.ico+'</span><div><div>'+n.label+'</div><div style="font-size:11px;color:var(--text2)">'+n.sub+'</div></div></div>'
+    })
+  })
+  p.innerHTML=html
+}
+function togglePlus(force){
+  var p=document.getElementById('plusPop')
+  var m=document.getElementById('plusMask')
+  var show=force!==undefined?force:!p.classList.contains('show')
+  p.classList.toggle('show',show)
+  m.classList.toggle('show',show)
+  if(show) toggleCtx(false)
+}
+function toggleCtx(force){
+  var p=document.getElementById('ctxPop')
+  var show=force!==undefined?force:!p.classList.contains('show')
+  p.classList.toggle('show',show)
+  if(show) togglePlus(false)
+}
+document.getElementById('plusBtn').addEventListener('click',function(e){e.stopPropagation();togglePlus()})
+document.getElementById('ctxBtn').addEventListener('click',function(e){e.stopPropagation();toggleCtx()})
+document.getElementById('backBtn').addEventListener('click',function(){history.back()})
+document.addEventListener('click',function(e){
+  if(!e.target.closest('#plusPop')&&!e.target.closest('#plusBtn')&&!e.target.closest('#plusMask'))togglePlus(false)
+  if(!e.target.closest('#ctxPop')&&!e.target.closest('#ctxBtn'))toggleCtx(false)
+  if(!e.target.closest('#sbDrop')){var d=document.getElementById('sbDrop');if(d)d.classList.remove('open')}
+})
+async function notice(item){
+  var c=cfg()
+  // 群聊事件只进群聊 tab、私信事件只进私信 tab（按事件类型落到对应会话），
+  // 并自动切到对应 tab 便于即时查看；不再按当前所在 tab 归属，避免串台。
+  if(cur!==item.grp) switchSandbox(item.grp)
+  appendMsg({post_type:'notice',is_notice:true,text:item.text,user_id:c.userWatch,nickname:c.userName,timestamp:Date.now()/1000})
+  try{
+    var res=await apiPost('/qqbot-sandbox/notice',{
+      groupId:c.groupId,userId:c.userId,userName:c.userName,
+      noticeType:item.noticeType,subType:item.subType,text:item.text,
+      groupName:c.groupName,operatorId:c.userId,applySource:item.applySource,verifyInfo:item.verifyInfo,
+    })
+    if(!res.ok)toast('通知发送失败: '+(res.error||''),true)
+  }catch(e){toast('通知请求失败: '+e.message,true)}
+}
+
+/* ===================== 切换沙盒 / 清空 ===================== */
+function switchSandbox(t){
+  cur=t
+  var drop=document.getElementById('sbDrop')
+  if(drop){
+    var trg=document.getElementById('sbTrigger')
+    var lab={group:'群沙盒',private:'私信沙盒'}[t]||t
+    if(trg)trg.textContent=lab
+    Array.prototype.forEach.call(drop.querySelectorAll('.opt'),function(o){o.classList.toggle('active',o.dataset.sb===t)})
+    drop.classList.remove('open')
+  }
+  refreshPhoneBar();renderChat();buildPlusPop();resubscribe()
+}
+function toggleSbDrop(){
+  var d=document.getElementById('sbDrop')
+  if(d)d.classList.toggle('open')
+}
+function refreshPhoneBar(){
+  var c=cfg()
+  var botAvatar='<img src="'+esc(BOT_IMG)+'" alt="bot" onerror="this.parentNode.textContent=\'🤖\'">'
+  var av=document.getElementById('phoneAvatar')
+  var nameEl=document.getElementById('phoneName')
+  var subEl=document.getElementById('phoneSub')
+  if(cur==='group'){
+    // 群聊：头像显示 bot 头像（沙盒里群内 bot 即适配器）
+    av.innerHTML=botAvatar
+    nameEl.textContent=c.groupName
+    subEl.innerHTML='<span class="bar-sub">group · '+shortId(c.groupWatch)+'</span>'
+  }else{
+    // 私信：对象就是 bot → 头像用 bot 头像、名称 QQBot测试助手、显示在线状态
+    av.innerHTML=botAvatar
+    nameEl.innerHTML='QQBot测试助手 <img class="bar-bot" src="'+esc(BOT_IMG)+'" alt="bot">'
+    subEl.innerHTML='<span class="bar-status"><span class="status-dot"></span>在线 <span class="bar-arrow">›</span></span>'
+  }
+}
+function clearChat(){if(!confirm('确认清空当前沙盒对话？'))return;ctx().msgs=[];renderChat()}
+
+/* ===================== 接收插件回复 ===================== */
+// 主通道：复用父窗口已鉴权的 WebSocket —— 沙盒 iframe 请求父窗口 watch QQBotSandbox 频道，
+// 父窗口收到对应 new_message 后通过 postMessage 转发回来（避免 iframe 内独立 WS 的鉴权/网络问题）。
+// 兜底通道：沙盒自身的 /qqbot-sandbox-ws（独立、无鉴权）与 outbox 轮询。
+function setConn(txt){var e=document.getElementById('connDot');if(!e)return;var on=(txt==='已连接'||txt==='已连接(父窗口)');e.classList.toggle('on',on);e.title=txt||'未连接'}
+function handleIncoming(data){
+  if(!data)return
+  var m=data.message
+  if(!m)return
+  // 系统通知（notice）由前端在点击时本地直接渲染一次，
+  // 不应再经 WS 回流重复显示（否则会出现两条）。
+  if(isNoticeMsg(m) && (m.from_sandbox || m.self_id==='QQBotSandbox' || data.self_id==='QQBotSandbox')) return
+  // 沙盒消息：self_id 恒为 QQBotSandbox，且沙盒只有单一频道，
+  // 主通道经 eventToMessage 后可能不含 group_id/user_id，故对沙盒消息直接显示，
+  // 不再做 group/user 精确匹配（避免内容被过滤而不显示）。
+  var isSandbox = (m.self_id==='QQBotSandbox') || (data.self_id==='QQBotSandbox') || (m.from_sandbox) || (m.is_bot&&m.me)
+  if(isSandbox){ appendMsg(m); return }
+  var inGroup=cur==='group'&&m.group_id===cfg().groupWatch
+  var inPriv=cur==='private'&&m.user_id===cfg().userWatch
+  if(inGroup||inPriv)appendMsg(m)
+}
+function subscribeParent(){
+  var c=cfg()
+  try{
+    parent.postMessage({type:'qqbot-sandbox-watch',selfId:'QQBotSandbox',groupId:c.groupWatch,privateUserId:c.userWatch},'*')
+  }catch(e){}
+  setConn('已连接(父窗口)')
+}
+window.addEventListener('message',function(e){
+  var d=e.data
+  if(d&&d.type==='qqbot-sandbox-message'){handleIncoming(d.payload)}
+})
+
+/* ----- 兜底：沙盒专属 WS（无鉴权） ----- */
+var ws=null
+function connectWs(){
+  var proto=location.protocol==='https:'?'wss':'ws'
+  var url=proto+'://'+location.host+'/qqbot-sandbox-ws'
+  try{ws=new WebSocket(url)}catch(err){return}
+  ws.onopen=function(){setConn('已连接')}
+  ws.onmessage=function(ev){
+    try{
+      var data=JSON.parse(ev.data)
+      if(data.type==='new_message'||data.type==='new_private_message')handleIncoming(data)
+    }catch(e){}
+  }
+  ws.onclose=function(){setTimeout(connectWs,3000)}
+  ws.onerror=function(){}
+}
+function resubscribe(){
+  // 切换沙盒时重新请求父窗口订阅对应频道
+  subscribeParent()
+}
+
+/* ===================== 轮询兜底（WS 不可用时的回复拉取） ===================== */
+async function pollOutbox(){
+  try{
+    var r=await fetch(getBase()+'/api/qqbot-sandbox/outbox')
+    var j=await r.json()
+    if(j.ok&&Array.isArray(j.items)){
+      for(var i=0;i<j.items.length;i++){
+        var it=j.items[i]
+        var m=it.message
+        if(!m)continue
+        var inGroup=cur==='group'&&m.group_id===cfg().groupWatch
+        var inPriv=cur==='private'&&m.user_id===cfg().userWatch
+        if(inGroup||inPriv)appendMsg(m)
+      }
+    }
+  }catch(e){}
+}
+
+/* ===================== 初始化 ===================== */
+// 注意：沙盒为独立模拟器，自带完整内联样式，刻意不加载主 style.css，
+// 否则主聊天页的 .msg-* 等类名会与沙盒内部撞名并污染布局（气泡变绿、消息离右很远）。
+buildPlusPop()
+refreshPhoneBar()
+renderChat()
+subscribeParent()
+connectWs()
+setInterval(pollOutbox,1500)
+</script>
+</body>
+</html>
