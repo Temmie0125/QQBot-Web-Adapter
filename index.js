@@ -885,12 +885,60 @@ async function qrGetRobotUin(appId) {
   }
 }
 
-// 读取 QQBot 配置
+// 将（新旧）token 统一规范为 bot 对象：{ QQ, appid, secret, webhook, private, group }
+// 旧格式为字符串：uin:appid:占位:secret:connMode:pdFlag
+function normalizeToken(t) {
+  if (typeof t === "string") {
+    const p = t.split(":")
+    // 旧格式：QQ:appid:token:secret:群权限:私域权限
+    // 群权限位为 "2" 表示 webhook 模式（此时不写 private/group）
+    const webhook = p[4] === "2"
+    const o = {
+      QQ: p[0],
+      appid: p[1],
+      secret: p[3],
+      webhook,
+    }
+    // 仅非 webhook 模式保留群事件与频道私域权限字段
+    if (!webhook) {
+      o.group = p[4] === "1"
+      o.private = p[5] === "1"
+    }
+    return o
+  }
+  const webhook = !!t.webhook
+  const o = {
+    QQ: t.QQ,
+    appid: t.appid,
+    secret: t.secret,
+    webhook,
+  }
+  // Webhook 模式无需频道私域权限与群事件字段，避免误导
+  if (!webhook) {
+    o.private = t.private === true
+    o.group = !!t.group
+  }
+  return o
+}
+
+// 读取 QQBot 配置（兼容旧版字符串 token，自动迁移为 bot 对象数组）
 async function readQQBotConfig() {
+  let cfg
   try {
     const raw = await fs.readFile(QQBot_ConfigFile, "utf8")
-    return YAML.parse(raw) || {}
+    cfg = YAML.parse(raw) || {}
   } catch { return {} }
+  if (Array.isArray(cfg.token)) {
+    let needMigrate = false
+    cfg.token = cfg.token.map(t => {
+      if (typeof t === "string") { needMigrate = true; return normalizeToken(t) }
+      return t
+    })
+    if (needMigrate) {
+      try { await writeQQBotConfig(cfg) } catch {}
+    }
+  }
+  return cfg
 }
 
 // 写入 QQBot 配置
@@ -907,17 +955,30 @@ async function saveAndConnectBot(uin, appid, secret, connMode = "1", pdFlag = "0
   let lockResolve
   _connectLocks.set(uinStr, new Promise(r => { lockResolve = r }))
 
+  let botObj = null
   try {
-    const newToken = `${uinStr}:${appid}:default占位:${secret}:${connMode}:${pdFlag}`
+    // 新格式：config.token 为 bot 对象数组（与 QQBot-Plugin 的 connect 一致）
+    const webhook = connMode === "2"
+    botObj = {
+      QQ: uin,
+      appid,
+      secret,
+      webhook,
+    }
+    // Webhook 模式无需频道私域权限与群事件字段，避免误导
+    if (!webhook) {
+      botObj.private = pdFlag === "1"
+      botObj.group = false
+    }
 
     const qqbotConfig = await readQQBotConfig()
-    if (!qqbotConfig.token) qqbotConfig.token = []
+    if (!Array.isArray(qqbotConfig.token)) qqbotConfig.token = []
 
-    const idx = qqbotConfig.token.findIndex(t => t.split(":")[0] === uinStr)
+    const idx = qqbotConfig.token.findIndex(t => String(t?.QQ) === uinStr)
     if (idx >= 0) {
-      qqbotConfig.token[idx] = newToken
+      qqbotConfig.token[idx] = botObj
     } else {
-      qqbotConfig.token.push(newToken)
+      qqbotConfig.token.push(botObj)
     }
     await writeQQBotConfig(qqbotConfig)
 
@@ -946,19 +1007,19 @@ async function saveAndConnectBot(uin, appid, secret, connMode = "1", pdFlag = "0
       }
       logger.mark(`[QQBot-Web] Bot ${uinStr} 配置已更新并重新连接`)
     } else {
-      // 新 Bot：调用 QQBot-Plugin 的 connect
+      // 新 Bot：调用 QQBot-Plugin 的 connect（传入 bot 对象）
       const qqbotAdapter = Bot.adapter?.find(a => typeof a.connect === "function")
       if (qqbotAdapter) {
-        await qqbotAdapter.connect(newToken)
+        await qqbotAdapter.connect(botObj)
         await new Promise(r => setTimeout(r, 1000))
       }
       logger.mark(`[QQBot-Web] Bot ${uinStr} 已添加并连接`)
     }
 
-    return { uin: uinStr, appid: String(appid), token: newToken, existed: idx >= 0 }
+    return { uin: uinStr, appid: String(appid), token: botObj, existed: idx >= 0 }
   } catch (e) {
     logger.debug(`[QQBot-Web] Bot ${uinStr} 热加载失败: ${e.message}，重启后生效`)
-    return { uin: uinStr, appid: String(appid), token: newToken, existed: false }
+    return { uin: uinStr, appid: String(appid), token: botObj, existed: false }
   } finally {
     _connectLocks.delete(uinStr)
     lockResolve()
@@ -3219,13 +3280,11 @@ function removeBotFromGlobal(id) {
 async function enableBotById(id) {
   const uinStr = String(id)
   const cfg = await readQQBotConfig()
-  const tok = (cfg.token || []).find(t => t.split(":")[0] === uinStr)
+  const tok = (cfg.token || []).find(t => String(t?.QQ) === uinStr)
   if (!tok) throw new Error("配置文件中找不到该 Bot 的 token")
-  const parts = tok.split(":")
-  const appid = parts[1]
-  const secret = parts[3]
+  const t = normalizeToken(tok)
   // saveAndConnectBot 会更新配置并热连接（已存在实例则重启 sdk）
-  const r = await saveAndConnectBot(uinStr, appid, secret, parts[4] || "1", parts[5] || "0")
+  const r = await saveAndConnectBot(uinStr, t.appid, t.secret, t.webhook ? "2" : "1", t.private ? "1" : "0")
   if (Bot[uinStr]) Bot[uinStr]._webDisabled = false
   return r
 }
@@ -3270,7 +3329,7 @@ Bot.express.post(`${WEB_BASE}/api/bot/:selfId/delete`, async (req, res) => {
     // 从 QQBot.yaml 配置文件中移除对应 token
     const cfg = await readQQBotConfig()
     if (Array.isArray(cfg.token)) {
-      cfg.token = cfg.token.filter(t => t.split(":")[0] !== String(selfId))
+      cfg.token = cfg.token.filter(t => String(t?.QQ) !== String(selfId))
       await writeQQBotConfig(cfg)
     }
     logger.mark(`[QQBot-Web] Bot ${selfId} 已删除（配置与内存均已移除）`)
