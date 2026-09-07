@@ -6157,53 +6157,80 @@ function updateAuditBadgeInDom(auditId, auditStatus, messageId) {
 }
 
 // ===== WebSocket 实时推送 =====
+// 兼容 Yunzai 全局鉴权（config/config/server.yaml 配置 server.auth）：
+// WebSocket 升级握手由 Yunzai 全局处理、不走 Bot.express.skip_auth，鉴权只认 header / URL query；
+// 而浏览器 WebSocket 无法自定义 header，故先从后端 /api/ws-auth 获取一次鉴权 query 拼到地址中并缓存。
+let wsAuthQueryCache = null
+let wsAuthQueryLoading = null
+function ensureWsAuthQuery() {
+  if (wsAuthQueryCache !== null) return Promise.resolve(wsAuthQueryCache)
+  if (!wsAuthQueryLoading) {
+    wsAuthQueryLoading = fetch(`${API_BASE}/ws-auth`, { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { wsAuthQueryCache = (d && d.query) || "" })
+      .catch(() => { wsAuthQueryCache = "" })
+      .finally(() => { wsAuthQueryLoading = null })
+  }
+  return wsAuthQueryLoading
+}
 function connectWebSocket() {
   if (state.ws) return
-  try {
-    const proto = location.protocol === "https:" ? "wss" : "ws"
-    const wsBase = WEB_BASE.substring(1) // "qqbot-web"
-    state.ws = new WebSocket(`${proto}://${location.host}/${wsBase}-ws`)
+  const proto = location.protocol === "https:" ? "wss" : "ws"
+  const wsBase = WEB_BASE.substring(1) // "qqbot-web"
+  ensureWsAuthQuery().then(query => {
+    if (state.ws) return
+    const qs = query ? (query.startsWith("?") ? query : "?" + query) : ""
+    try {
+      state.ws = new WebSocket(`${proto}://${location.host}/${wsBase}-ws${qs}`)
 
-    state.ws.onopen = () => {
-      state.wsReady = true
-      console.log("[WS] 已连接")
-      // 重新订阅当前聊天
-      const chatId = state.chatType === "group" ? state.currentGroupId : state.currentPrivateUserId
-      if (state.currentBotId && chatId) {
-        const msg = { type: "watch", selfId: state.currentBotId }
-        if (state.chatType === "group") {
-          msg.groupId = chatId
-        } else {
-          msg.privateUserId = chatId
+      state.ws.onopen = () => {
+        state.wsReady = true
+        console.log("[WS] 已连接")
+        // 重新订阅当前聊天
+        const chatId = state.chatType === "group" ? state.currentGroupId : state.currentPrivateUserId
+        if (state.currentBotId && chatId) {
+          const msg = { type: "watch", selfId: state.currentBotId }
+          if (state.chatType === "group") {
+            msg.groupId = chatId
+          } else {
+            msg.privateUserId = chatId
+          }
+          state.ws.send(JSON.stringify(msg))
         }
-        state.ws.send(JSON.stringify(msg))
       }
-    }
 
-    state.ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (data.type === "auth_error") {
-          console.warn("[WS] 鉴权失败:", data.error)
-          window.location.replace(`${WEB_BASE}/login.html`)
-          return
-        }
-        handleWsMessage(data)
-      } catch {}
-    }
+      state.ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          if (data.type === "auth_error") {
+            console.warn("[WS] 鉴权失败:", data.error)
+            window.location.replace(`${WEB_BASE}/login.html`)
+            return
+          }
+          if (data.type === "theme-changed") {
+            // 后端广播：主题色/材质/过渡动画变更，实时套用并转发给自定义页面 iframe
+            applyTheme(data.themeColor, data.material)
+            if (data.transitions !== undefined) applyTransitions(data.transitions)
+            broadcastThemeToIframes(data.themeColor, data.material)
+            return
+          }
+          handleWsMessage(data)
+        } catch {}
+      }
 
-    state.ws.onclose = () => {
-      state.wsReady = false
-      state.ws = null
-      console.log("[WS] 断开，3s后重连")
-      setTimeout(connectWebSocket, 3000)
-    }
+      state.ws.onclose = () => {
+        state.wsReady = false
+        state.ws = null
+        console.log("[WS] 断开，3s后重连")
+        setTimeout(connectWebSocket, 3000)
+      }
 
-    state.ws.onerror = () => {}
-  } catch (err) {
-    console.error("[WS] 连接失败:", err)
-    setTimeout(connectWebSocket, 5000)
-  }
+      state.ws.onerror = () => {}
+    } catch (err) {
+      console.error("[WS] 连接失败:", err)
+      setTimeout(connectWebSocket, 5000)
+    }
+  })
 }
 
 // 沙盒 iframe 通过 postMessage 请求订阅 QQBotSandbox 频道（复用已鉴权的主 WS）
