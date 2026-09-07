@@ -219,6 +219,17 @@ const WS_PATH = `${WEB_BASE_PREFIX}-ws`
 // 用于构造 Bot[沙盒id].avatar 的绝对本地路径（如 /qqbot-web/public/bot.png）。
 Bot.qqbotWebBasePath = WEB_BASE
 
+// ========== 兼容 Yunzai 全局鉴权（config/config/server.yaml） ==========
+// 一旦在 server.yaml 里配置了 server.auth，Yunzai 会在 Bot.express 最前面挂 serverAuth，
+// 本站的页面与 /api/* 接口将全部被它 401 拦截（浏览器无法自动携带自定义 header）。
+// 本站自身已带「登录 + 公网访问控制」鉴权（apiAuthGuard），因此把本站前缀加入
+// Bot.express.skip_auth 白名单，跳过 Yunzai 全局鉴权，改由本站自己校验。
+// 注意：WebSocket 升级握手由 Yunzai bot.js 全局处理（不经 express，此处 skip_auth 对 ws 不生效），
+//       其鉴权参数由下方 /api/ws-auth 接口下发给前端拼接在 ws 地址中。
+if (Bot.express && Array.isArray(Bot.express.skip_auth) && !Bot.express.skip_auth.includes(WEB_BASE)) {
+  Bot.express.skip_auth.push(WEB_BASE)
+}
+
 // ========== 自定义页面（开发者扩展 Web 控制台页面） ==========
 // 两种注册方式：
 //   1) 约定式：扫描 plugins/<插件>/webadapter/page.{js,json}（导出单个或数组描述符）
@@ -394,6 +405,29 @@ Bot.webAdapter.registerApi = (method, route, ...handlers) => {
     : route
   Bot.express[method](full, apiAuthGuard, ...handlers)
 }
+
+// ========== 兼容 Yunzai 全局鉴权（server.yaml）—— WebSocket 部分 ==========
+// 读取 Yunzai config/config/server.yaml 的 server.auth，序列化为 URL query 字符串。
+// 若服务端未配置鉴权则返回空串。
+// 返回给前端后仅用于拼接 ws 地址（浏览器 WebSocket 无法自定义 header，只能走 query）。
+// 注意：该接口受 apiAuthGuard 登录鉴权保护，不会对未登录请求泄露鉴权参数。
+async function readYunzaiServerAuthQuery() {
+  try {
+    const file = path.join(__dirname, "..", "..", "config", "config", "server.yaml")
+    const raw = await fs.readFile(file, "utf8")
+    const auth = YAML.parse(raw)?.server?.auth
+    if (!auth || typeof auth !== "object") return ""
+    return Object.entries(auth)
+      .map(([k, v]) => `${encodeURIComponent(String(k))}=${encodeURIComponent(String(v))}`)
+      .join("&")
+  } catch {
+    return ""
+  }
+}
+Bot.webAdapter.registerApi("get", "/ws-auth", async (_req, res) => {
+  res.json({ query: await readYunzaiServerAuthQuery() })
+})
+
 
 // 沙盒页面 API：发送用户消息 / 触发系统通知（交由 QQBotSandbox adapter 处理，复用真实事件链路）
 Bot.webAdapter.registerApi("post", "/qqbot-sandbox/send", async (req, res) => {
