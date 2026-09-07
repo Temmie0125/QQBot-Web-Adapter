@@ -4,7 +4,7 @@ import fs from "node:fs/promises"
 import fsSync from "node:fs"
 import os from "node:os"
 import crypto from "node:crypto"
-import { execSync, exec as execCb } from "node:child_process"
+import { execSync, exec as execCb, spawnSync } from "node:child_process"
 import { promisify } from "node:util"
 import { fileURLToPath, pathToFileURL } from 'url'
 import { createRequire } from "node:module"
@@ -4281,12 +4281,20 @@ Bot.express.get(`${WEB_BASE}/api/system-info`, async (req, res) => {
     let disks = []
     try {
       if (process.platform === "win32") {
-        // Windows: 获取所有逻辑盘
-        const raw = execSync(
-          'wmic logicaldisk get DeviceID,Size,FreeSpace /format:csv',
-          { timeout: 8000, windowsHide: true }
-        ).toString().trim()
-        const lines = raw.split("\n").filter(Boolean)
+        // Windows: 用 PowerShell CIM 替代已废弃的 wmic（新版 Windows 已移除 wmic.exe）。
+        // 输出保持 "Node,DeviceID,Size,FreeSpace" 的 CSV 结构，与下方解析逻辑一致。
+        const res = spawnSync(
+          "powershell.exe",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Write-Output 'Node,DeviceID,Size,FreeSpace'; Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ForEach-Object { Write-Output ($env:COMPUTERNAME + ',' + $_.DeviceID + ',' + $_.Size + ',' + $_.FreeSpace) }",
+          ],
+          { timeout: 8000, windowsHide: true, encoding: "utf8" }
+        )
+        const raw = (res.stdout || "").trim()
+        const lines = raw.split(/\r?\n/).filter(Boolean)
         for (let i = 1; i < lines.length; i++) {
           const cols = lines[i].split(",")
           if (cols.length < 3) continue
