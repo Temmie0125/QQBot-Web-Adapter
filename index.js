@@ -415,7 +415,10 @@ async function readYunzaiServerAuthQuery() {
   try {
     const file = path.join(__dirname, "..", "..", "config", "config", "server.yaml")
     const raw = await fs.readFile(file, "utf8")
-    const auth = YAML.parse(raw)?.server?.auth
+    const root = YAML.parse(raw) || {}
+    // server.yaml 的 auth 位于顶层（与 url/port/https 平级），cfg.server 即对应此 YAML 根对象；
+    // 少数 fork 也兼容 server: 子级嵌套写法。
+    const auth = root.auth ?? root.server?.auth
     if (!auth || typeof auth !== "object") return ""
     return Object.entries(auth)
       .map(([k, v]) => `${encodeURIComponent(String(k))}=${encodeURIComponent(String(v))}`)
