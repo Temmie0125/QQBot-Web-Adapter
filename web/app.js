@@ -6163,12 +6163,20 @@ function updateAuditBadgeInDom(auditId, auditStatus, messageId) {
 let wsAuthQueryCache = null
 let wsAuthQueryLoading = null
 function ensureWsAuthQuery() {
+  // 仅缓存「明确拿到接口响应」的结果；401 / 网络异常不缓存，下次重连会重新获取，
+  // 避免未登录或接口暂不可达时把空串永久缓存，导致后续一直“裸连”触发全局鉴权失败。
   if (wsAuthQueryCache !== null) return Promise.resolve(wsAuthQueryCache)
   if (!wsAuthQueryLoading) {
     wsAuthQueryLoading = fetch(`${API_BASE}/ws-auth`, { cache: "no-store" })
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => { wsAuthQueryCache = (d && d.query) || "" })
-      .catch(() => { wsAuthQueryCache = "" })
+      .then(r => {
+        if (!r.ok) throw new Error(`ws-auth ${r.status}`)
+        return r.json()
+      })
+      .then(d => {
+        wsAuthQueryCache = (d && d.query) || ""
+        return wsAuthQueryCache
+      })
+      .catch(() => "")
       .finally(() => { wsAuthQueryLoading = null })
   }
   return wsAuthQueryLoading
@@ -6180,8 +6188,13 @@ function connectWebSocket() {
   ensureWsAuthQuery().then(query => {
     if (state.ws) return
     const qs = query ? (query.startsWith("?") ? query : "?" + query) : ""
+    // 带鉴权 query 时必须使用 "/web-ws/?..." 形式：
+    // Yunzai bot.js 按 req.url.split("/")[1] 解析 ws 处理器名，若直接拼在路径后
+    // （/web-ws?..）会把 query 误认成处理器名导致 404；多加一个 "/" 后 split 结果
+    // 仍为 "web-ws"，且 query 能被 serverAuth 正常解析，两者兼得。
+    const wsPath = qs ? `/${wsBase}-ws/${qs}` : `/${wsBase}-ws`
     try {
-      state.ws = new WebSocket(`${proto}://${location.host}/${wsBase}-ws${qs}`)
+      state.ws = new WebSocket(`${proto}://${location.host}${wsPath}`)
 
       state.ws.onopen = () => {
         state.wsReady = true
