@@ -1005,7 +1005,7 @@ async function saveAndConnectBot(uin, appid, secret, connMode = "1", pdFlag = "0
     // Webhook 模式无需频道私域权限与群事件字段，避免误导
     if (!webhook) {
       botObj.private = pdFlag === "1"
-      botObj.group = false
+      botObj.group = true
     }
 
     const qqbotConfig = await readQQBotConfig()
