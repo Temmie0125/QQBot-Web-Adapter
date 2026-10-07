@@ -4,7 +4,7 @@ import fs from "node:fs/promises"
 import fsSync from "node:fs"
 import os from "node:os"
 import crypto from "node:crypto"
-import { execSync, exec as execCb } from "node:child_process"
+import { execSync, exec as execCb, spawnSync } from "node:child_process"
 import { promisify } from "node:util"
 import { fileURLToPath, pathToFileURL } from 'url'
 import { createRequire } from "node:module"
@@ -219,6 +219,17 @@ const WS_PATH = `${WEB_BASE_PREFIX}-ws`
 // 用于构造 Bot[沙盒id].avatar 的绝对本地路径（如 /qqbot-web/public/bot.png）。
 Bot.qqbotWebBasePath = WEB_BASE
 
+// ========== 兼容 Yunzai 全局鉴权（config/config/server.yaml） ==========
+// 一旦在 server.yaml 里配置了 server.auth，Yunzai 会在 Bot.express 最前面挂 serverAuth，
+// 本站的页面与 /api/* 接口将全部被它 401 拦截（浏览器无法自动携带自定义 header）。
+// 本站自身已带「登录 + 公网访问控制」鉴权（apiAuthGuard），因此把本站前缀加入
+// Bot.express.skip_auth 白名单，跳过 Yunzai 全局鉴权，改由本站自己校验。
+// 注意：WebSocket 升级握手由 Yunzai bot.js 全局处理（不经 express，此处 skip_auth 对 ws 不生效），
+//       其鉴权参数由下方 /api/ws-auth 接口下发给前端拼接在 ws 地址中。
+if (Bot.express && Array.isArray(Bot.express.skip_auth) && !Bot.express.skip_auth.includes(WEB_BASE)) {
+  Bot.express.skip_auth.push(WEB_BASE)
+}
+
 // ========== 自定义页面（开发者扩展 Web 控制台页面） ==========
 // 两种注册方式：
 //   1) 约定式：扫描 plugins/<插件>/webadapter/page.{js,json}（导出单个或数组描述符）
@@ -394,6 +405,32 @@ Bot.webAdapter.registerApi = (method, route, ...handlers) => {
     : route
   Bot.express[method](full, apiAuthGuard, ...handlers)
 }
+
+// ========== 兼容 Yunzai 全局鉴权（server.yaml）—— WebSocket 部分 ==========
+// 读取 Yunzai config/config/server.yaml 的 server.auth，序列化为 URL query 字符串。
+// 若服务端未配置鉴权则返回空串。
+// 返回给前端后仅用于拼接 ws 地址（浏览器 WebSocket 无法自定义 header，只能走 query）。
+// 注意：该接口受 apiAuthGuard 登录鉴权保护，不会对未登录请求泄露鉴权参数。
+async function readYunzaiServerAuthQuery() {
+  try {
+    const file = path.join(__dirname, "..", "..", "config", "config", "server.yaml")
+    const raw = await fs.readFile(file, "utf8")
+    const root = YAML.parse(raw) || {}
+    // server.yaml 的 auth 位于顶层（与 url/port/https 平级），cfg.server 即对应此 YAML 根对象；
+    // 少数 fork 也兼容 server: 子级嵌套写法。
+    const auth = root.auth ?? root.server?.auth
+    if (!auth || typeof auth !== "object") return ""
+    return Object.entries(auth)
+      .map(([k, v]) => `${encodeURIComponent(String(k))}=${encodeURIComponent(String(v))}`)
+      .join("&")
+  } catch {
+    return ""
+  }
+}
+Bot.webAdapter.registerApi("get", "/ws-auth", async (_req, res) => {
+  res.json({ query: await readYunzaiServerAuthQuery() })
+})
+
 
 // 沙盒页面 API：发送用户消息 / 触发系统通知（交由 QQBotSandbox adapter 处理，复用真实事件链路）
 Bot.webAdapter.registerApi("post", "/qqbot-sandbox/send", async (req, res) => {
@@ -885,12 +922,60 @@ async function qrGetRobotUin(appId) {
   }
 }
 
-// 读取 QQBot 配置
+// 将（新旧）token 统一规范为 bot 对象：{ QQ, appid, secret, webhook, private, group }
+// 旧格式为字符串：uin:appid:占位:secret:connMode:pdFlag
+function normalizeToken(t) {
+  if (typeof t === "string") {
+    const p = t.split(":")
+    // 旧格式：QQ:appid:token:secret:群权限:私域权限
+    // 群权限位为 "2" 表示 webhook 模式（此时不写 private/group）
+    const webhook = p[4] === "2"
+    const o = {
+      QQ: p[0],
+      appid: p[1],
+      secret: p[3],
+      webhook,
+    }
+    // 仅非 webhook 模式保留群事件与频道私域权限字段
+    if (!webhook) {
+      o.group = p[4] === "1"
+      o.private = p[5] === "1"
+    }
+    return o
+  }
+  const webhook = !!t.webhook
+  const o = {
+    QQ: t.QQ,
+    appid: t.appid,
+    secret: t.secret,
+    webhook,
+  }
+  // Webhook 模式无需频道私域权限与群事件字段，避免误导
+  if (!webhook) {
+    o.private = t.private === true
+    o.group = !!t.group
+  }
+  return o
+}
+
+// 读取 QQBot 配置（兼容旧版字符串 token，自动迁移为 bot 对象数组）
 async function readQQBotConfig() {
+  let cfg
   try {
     const raw = await fs.readFile(QQBot_ConfigFile, "utf8")
-    return YAML.parse(raw) || {}
+    cfg = YAML.parse(raw) || {}
   } catch { return {} }
+  if (Array.isArray(cfg.token)) {
+    let needMigrate = false
+    cfg.token = cfg.token.map(t => {
+      if (typeof t === "string") { needMigrate = true; return normalizeToken(t) }
+      return t
+    })
+    if (needMigrate) {
+      try { await writeQQBotConfig(cfg) } catch {}
+    }
+  }
+  return cfg
 }
 
 // 写入 QQBot 配置
@@ -907,17 +992,30 @@ async function saveAndConnectBot(uin, appid, secret, connMode = "1", pdFlag = "0
   let lockResolve
   _connectLocks.set(uinStr, new Promise(r => { lockResolve = r }))
 
+  let botObj = null
   try {
-    const newToken = `${uinStr}:${appid}:default占位:${secret}:${connMode}:${pdFlag}`
+    // 新格式：config.token 为 bot 对象数组（与 QQBot-Plugin 的 connect 一致）
+    const webhook = connMode === "2"
+    botObj = {
+      QQ: uin,
+      appid,
+      secret,
+      webhook,
+    }
+    // Webhook 模式无需频道私域权限与群事件字段，避免误导
+    if (!webhook) {
+      botObj.private = pdFlag === "1"
+      botObj.group = true
+    }
 
     const qqbotConfig = await readQQBotConfig()
-    if (!qqbotConfig.token) qqbotConfig.token = []
+    if (!Array.isArray(qqbotConfig.token)) qqbotConfig.token = []
 
-    const idx = qqbotConfig.token.findIndex(t => t.split(":")[0] === uinStr)
+    const idx = qqbotConfig.token.findIndex(t => String(t?.QQ) === uinStr)
     if (idx >= 0) {
-      qqbotConfig.token[idx] = newToken
+      qqbotConfig.token[idx] = botObj
     } else {
-      qqbotConfig.token.push(newToken)
+      qqbotConfig.token.push(botObj)
     }
     await writeQQBotConfig(qqbotConfig)
 
@@ -946,19 +1044,19 @@ async function saveAndConnectBot(uin, appid, secret, connMode = "1", pdFlag = "0
       }
       logger.mark(`[QQBot-Web] Bot ${uinStr} 配置已更新并重新连接`)
     } else {
-      // 新 Bot：调用 QQBot-Plugin 的 connect
+      // 新 Bot：调用 QQBot-Plugin 的 connect（传入 bot 对象）
       const qqbotAdapter = Bot.adapter?.find(a => typeof a.connect === "function")
       if (qqbotAdapter) {
-        await qqbotAdapter.connect(newToken)
+        await qqbotAdapter.connect(botObj)
         await new Promise(r => setTimeout(r, 1000))
       }
       logger.mark(`[QQBot-Web] Bot ${uinStr} 已添加并连接`)
     }
 
-    return { uin: uinStr, appid: String(appid), token: newToken, existed: idx >= 0 }
+    return { uin: uinStr, appid: String(appid), token: botObj, existed: idx >= 0 }
   } catch (e) {
     logger.debug(`[QQBot-Web] Bot ${uinStr} 热加载失败: ${e.message}，重启后生效`)
-    return { uin: uinStr, appid: String(appid), token: newToken, existed: false }
+    return { uin: uinStr, appid: String(appid), token: botObj, existed: false }
   } finally {
     _connectLocks.delete(uinStr)
     lockResolve()
@@ -3220,13 +3318,11 @@ function removeBotFromGlobal(id) {
 async function enableBotById(id) {
   const uinStr = String(id)
   const cfg = await readQQBotConfig()
-  const tok = (cfg.token || []).find(t => t.split(":")[0] === uinStr)
+  const tok = (cfg.token || []).find(t => String(t?.QQ) === uinStr)
   if (!tok) throw new Error("配置文件中找不到该 Bot 的 token")
-  const parts = tok.split(":")
-  const appid = parts[1]
-  const secret = parts[3]
+  const t = normalizeToken(tok)
   // saveAndConnectBot 会更新配置并热连接（已存在实例则重启 sdk）
-  const r = await saveAndConnectBot(uinStr, appid, secret, parts[4] || "1", parts[5] || "0")
+  const r = await saveAndConnectBot(uinStr, t.appid, t.secret, t.webhook ? "2" : "1", t.private ? "1" : "0")
   if (Bot[uinStr]) Bot[uinStr]._webDisabled = false
   return r
 }
@@ -3271,7 +3367,7 @@ Bot.express.post(`${WEB_BASE}/api/bot/:selfId/delete`, async (req, res) => {
     // 从 QQBot.yaml 配置文件中移除对应 token
     const cfg = await readQQBotConfig()
     if (Array.isArray(cfg.token)) {
-      cfg.token = cfg.token.filter(t => t.split(":")[0] !== String(selfId))
+      cfg.token = cfg.token.filter(t => String(t?.QQ) !== String(selfId))
       await writeQQBotConfig(cfg)
     }
     logger.mark(`[QQBot-Web] Bot ${selfId} 已删除（配置与内存均已移除）`)
@@ -4186,12 +4282,20 @@ Bot.express.get(`${WEB_BASE}/api/system-info`, async (req, res) => {
     let disks = []
     try {
       if (process.platform === "win32") {
-        // Windows: 获取所有逻辑盘
-        const raw = execSync(
-          'wmic logicaldisk get DeviceID,Size,FreeSpace /format:csv',
-          { timeout: 8000, windowsHide: true }
-        ).toString().trim()
-        const lines = raw.split("\n").filter(Boolean)
+        // Windows: 用 PowerShell CIM 替代已废弃的 wmic（新版 Windows 已移除 wmic.exe）。
+        // 输出保持 "Node,DeviceID,Size,FreeSpace" 的 CSV 结构，与下方解析逻辑一致。
+        const res = spawnSync(
+          "powershell.exe",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Write-Output 'Node,DeviceID,Size,FreeSpace'; Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ForEach-Object { Write-Output ($env:COMPUTERNAME + ',' + $_.DeviceID + ',' + $_.Size + ',' + $_.FreeSpace) }",
+          ],
+          { timeout: 8000, windowsHide: true, encoding: "utf8" }
+        )
+        const raw = (res.stdout || "").trim()
+        const lines = raw.split(/\r?\n/).filter(Boolean)
         for (let i = 1; i < lines.length; i++) {
           const cols = lines[i].split(",")
           if (cols.length < 3) continue
