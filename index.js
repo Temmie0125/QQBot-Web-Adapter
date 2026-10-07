@@ -452,7 +452,7 @@ Bot.webAdapter.registerApi("get", "/qqbot-sandbox/media", async (req, res) => {
       const ct = mimeMap[ext(filePath).toLowerCase()] || 'application/octet-stream'
       res.set('Content-Type', ct)
       res.set('Cache-Control', 'public, max-age=86400')
-      res.sendFile(filePath)
+      res.sendFile(filePath, { dotfiles: "allow" })
     }
 
     const rawUrl = req.query.url
@@ -2692,7 +2692,7 @@ Bot.express.get(["/", "/login.html"], (req, res) => {
 Bot.express.get(`${WEB_BASE}/favicon.ico`, (req, res) => {
   const faviconPath = path.join(webDir, "favicon.ico")
   res.set("Cache-Control", "public, max-age=86400")
-  res.sendFile(faviconPath, err => { if (err) res.status(404).end() })
+  res.sendFile(faviconPath, { dotfiles: "allow" }, err => { if (err) res.status(404).end() })
 })
 
 // 频率限制中间件（在鉴权之前）
@@ -2855,7 +2855,8 @@ Bot.express.get(`${WEB_BASE}/api/bot/:selfId/local-media`, async (req, res) => {
     const contentType = mimeMap[ext] || 'application/octet-stream'
     res.set('Content-Type', contentType)
     res.set('Cache-Control', 'public, max-age=86400')
-    res.sendFile(filePath)
+    // dotfiles: 'allow' —— 见上方说明，隐藏目录部署必须显式放行
+    res.sendFile(filePath, { dotfiles: "allow" })
   } catch (err) {
     logger.debug(`[QQBot-Web] local-media 失败: ${err.message}`)
     res.status(404).end()
@@ -2886,7 +2887,7 @@ Bot.express.use(`${WEB_BASE}`, (req, res, next) => {
   if (ext && ext !== ".html") return next()
 
   res.set("Cache-Control", "no-cache, no-store, must-revalidate")
-  res.sendFile(path.join(webDir, "index.html"), err => {
+  res.sendFile(path.join(webDir, "index.html"), { dotfiles: "allow" }, err => {
     if (err) res.sendStatus(404)
   })
 })
@@ -2949,7 +2950,7 @@ Bot.express.get(webPageRe, (req, res) => {
   const extAllowed = [".html", ".js", ".css", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf", ".map"]
   if (!extAllowed.includes(ext)) return res.sendStatus(403)
 
-  res.sendFile(filePath, err => { if (err) res.sendStatus(404) })
+  res.sendFile(filePath, { dotfiles: "allow" }, err => { if (err) res.sendStatus(404) })
 })
 
 // 登录
