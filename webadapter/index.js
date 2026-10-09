@@ -409,9 +409,12 @@ export function init(ctx) {
       // fl/gl 的 key 为 "selfId<sep>openid"，同时兼容纯 openid 兜底
       const fullKey = `${selfId}${bot.adapter.sep}${openid}`
       if (kind === "user") {
-        const info = bot.fl && bot.fl.get
+        // fl 只存真实好友；群成员/退群成员资料在 users 缓存
+        let info = bot.fl && bot.fl.get
           ? (bot.fl.get(fullKey) || bot.fl.get(openid))
           : null
+        if (!info && bot.users?.get)
+          info = bot.users.get(fullKey) || bot.users.get(openid)
         if (info && (info.nickname || info.avatar)) {
           return res.json({ ok: true, found: true, openid, nickname: info.nickname || "", avatar: info.avatar || "" })
         }
