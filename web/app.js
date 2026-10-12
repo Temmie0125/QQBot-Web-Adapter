@@ -469,6 +469,12 @@ function renderBotDropdown() {
         <div class="bot-dd-qq">BotQQ: ${bot.self_id}</div>
       </div>
       <div class="bot-dd-actions">
+        <select class="bot-md-select" data-action="mdmode" data-bot-id="${bot.self_id}" title="消息发送模式&#10;MD：全局原生Markdown（默认）&#10;智能：纯文本直发，@/图片/按钮等仍走Markdown&#10;文本：全部纯文本&#10;原生：全部原生Markdown">
+          <option value="" ${!bot.markdown_mode ? 'selected' : ''}>MD</option>
+          <option value="auto" ${bot.markdown_mode === 'auto' ? 'selected' : ''}>智能</option>
+          <option value="legacy" ${bot.markdown_mode === 'legacy' ? 'selected' : ''}>文本</option>
+          <option value="raw" ${bot.markdown_mode === 'raw' ? 'selected' : ''}>原生</option>
+        </select>
         <label class="bot-toggle" title="启用/关闭">
           <input type="checkbox" class="bot-toggle-input" data-action="toggle" data-bot-id="${bot.self_id}" ${bot.enabled !== false ? 'checked' : ''}>
           <span class="bot-toggle-slider"></span>
@@ -498,11 +504,32 @@ function renderBotDropdown() {
   dropdown.querySelectorAll(".bot-dropdown-item[data-bot-id]").forEach(el => {
     const id = el.dataset.botId
     el.addEventListener("click", (e) => {
-      // 点击开关/删除按钮时不触发选择
-      if (e.target.closest(".bot-toggle") || e.target.closest(".bot-del-btn")) return
+      // 点击模式选择/开关/删除按钮时不触发选择
+      if (e.target.closest(".bot-md-select") || e.target.closest(".bot-toggle") || e.target.closest(".bot-del-btn")) return
       selectBot(id)
       closeBotDropdown()
     })
+
+    const mdSelect = el.querySelector(".bot-md-select")
+    if (mdSelect) {
+      mdSelect.addEventListener("click", (e) => e.stopPropagation())
+      mdSelect.addEventListener("change", async () => {
+        const mode = mdSelect.value
+        mdSelect.disabled = true
+        try {
+          await api(`/bot/${id}/markdown-mode`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) })
+          const labels = { "": "全局Markdown", auto: "智能判定", legacy: "纯文本", raw: "原生Markdown" }
+          showToast(`Bot ${id} 发送模式：${labels[mode] || mode || "全局Markdown"}（即时生效）`)
+          await loadBots()
+        } catch (err) {
+          console.error("[bot md-mode] 失败:", err)
+          showToast(`设置失败：${err.message || err}`)
+          await loadBots()
+        } finally {
+          mdSelect.disabled = false
+        }
+      })
+    }
 
     const toggle = el.querySelector(".bot-toggle-input")
     if (toggle) {

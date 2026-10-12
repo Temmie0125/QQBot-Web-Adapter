@@ -1628,6 +1628,8 @@ function getBots() {
       avatar: toHttps(info.avatar) || `https://q.qlogo.cn/g?b=qq&s=0&nk=${id}`,
       appid: info.appid || "",
       enabled: !Bot[id]._webDisabled,
+      // 消息发送模式：空=全局原生Markdown(默认)，auto=智能判定，legacy=纯文本，raw=原生
+      markdown_mode: Bot.QQBotConfig?.config?.markdown?.[id] || "",
     })
   }
   return bots
@@ -3350,6 +3352,27 @@ Bot.express.post(`${WEB_BASE}/api/bot/:selfId/enable`, async (req, res) => {
     res.json({ ok: true })
   } catch (err) {
     logger.error("[QQBot-Web] 启用 Bot 失败:", err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// 设置某 Bot 的消息发送模式（写入 QQBot-Plugin 内存配置单例并落盘，即时生效无需重启）
+// mode: ""=全局原生Markdown(默认)，"auto"=智能判定(纯文本直发，特殊内容走markdown)，"legacy"=纯文本，"raw"=原生markdown原文
+Bot.express.post(`${WEB_BASE}/api/bot/:selfId/markdown-mode`, async (req, res) => {
+  try {
+    const { selfId } = req.params
+    const mode = String(req.body?.mode ?? "")
+    if (!["", "auto", "legacy", "raw"].includes(mode)) return res.status(400).json({ error: "无效的发送模式" })
+    if (!Bot[selfId] || Bot[selfId].adapter?.id !== "QQBot") return res.status(404).json({ error: "Bot 未找到" })
+    const qqbotCfg = Bot.QQBotConfig
+    if (!qqbotCfg?.config?.markdown) return res.status(500).json({ error: "QQBot-Plugin 配置不可用" })
+    if (mode) qqbotCfg.config.markdown[selfId] = mode
+    else delete qqbotCfg.config.markdown[selfId]
+    await qqbotCfg.configSave()
+    logger.mark(`[QQBot-Web] Bot ${selfId} 消息发送模式已设置为 ${mode || "全局Markdown(默认)"}`)
+    res.json({ ok: true, mode })
+  } catch (err) {
+    logger.error("[QQBot-Web] 设置发送模式失败:", err)
     res.status(500).json({ error: String(err) })
   }
 })
