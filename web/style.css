@@ -32,6 +32,8 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   height: 100vh;
+  height: calc(var(--app-vh, 1vh) * 100);
+  height: 100dvh;
   overflow: hidden;
   font-size: 14px;
   line-height: 1.5;
@@ -39,7 +41,13 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-#app { display: flex; flex-direction: column; height: 100vh; }
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: calc(var(--app-vh, 1vh) * 100);
+  height: 100dvh;
+}
 
 /* ===== Topbar ===== */
 .topbar {
@@ -1975,7 +1983,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-around;
-    height: 56px;
+    height: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     background: var(--bg-secondary);
     border-top: 1px solid var(--border);
     flex-shrink: 0;
