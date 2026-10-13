@@ -790,7 +790,9 @@ async function updateDashboard() {
   }
 
   if (privatesR.status === "fulfilled") {
-    $("#statPrivateCount").textContent = privatesR.value.length
+    // private-chats 返回分页对象 {users,total,...}，总数取 total（旧版数组结构兜底 length）
+    const pv = privatesR.value
+    $("#statPrivateCount").textContent = Array.isArray(pv) ? pv.length : (pv?.total ?? "-")
   } else {
     $("#statPrivateCount").textContent = "-"
   }
