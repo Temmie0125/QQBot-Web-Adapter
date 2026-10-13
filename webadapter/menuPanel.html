@@ -834,29 +834,14 @@ function setupSubDrag(){
   $$("#m-sub-list .sub-banner").forEach(b=>{
     b.addEventListener("dragover",e=>{
       e.preventDefault()
-      if(!subDragSrc||subDragSrc===b){clearDropIndicator();b.classList.remove("drag-over");return}
+      if(!subDragSrc||subDragSrc===b){clearDropIndicator();return}
       const m=computeDropMode(b,e.clientY)
-      if(m.mode==="insert"){b.classList.remove("drag-over");showDropIndicator(b,m.after)}
-      else{clearDropIndicator();b.classList.add("drag-over")}
+      showDropIndicator(b,m.after)
     })
-    b.addEventListener("dragleave",()=>{b.classList.remove("drag-over")})
     b.addEventListener("drop",e=>{
       e.preventDefault()
-      b.classList.remove("drag-over")
-      if(!subDragSrc)return
-      const arr=getDraftMenu().sub_menu_items
-      const from=Number(subDragSrc.dataset.sidx),to=Number(b.dataset.sidx)
-      const m=computeDropMode(b,e.clientY)
-      if(m.mode==="swap"){
-        if(from!==to){const t=arr[to];arr[to]=arr[from];arr[from]=t}
-      }else{
-        let insert=m.after?to+1:to
-        if(from<insert)insert-=1
-        if(insert<0)insert=0
-        reorderArr(arr,from,insert)
-      }
-      clearDropIndicator()
-      renderSubList()
+      if(!subDragSrc||subDragSrc===b){clearDropIndicator();return}
+      commitReorder(subDragSrc,b,computeDropMode(b,e.clientY),getDraftMenu().sub_menu_items,"sidx",renderSubList)
     })
   })
   // 移动端：隐藏六点后，长按整条横幅拖动排序
@@ -982,40 +967,32 @@ function showDropIndicator(target,after){
   if(after)target.after(ind);else target.before(ind)
 }
 function clearDropIndicator(){$$(".drop-indicator").forEach(x=>x.remove())}
-// 计算拖拽落点模式：
-//   返回 {mode:"swap"} 表示覆盖核心区→互换位置
-//   返回 {mode:"insert", after:bool} 表示落在边缘缝隙→插入（after=true 插后面）
+// 计算拖拽落点（插入式排序）：
+//   目标横幅上半 = 插到它前面，下半 = 插到它后面；落点即插入，无交换语义
 function computeDropMode(b,clientY){
   const r=b.getBoundingClientRect()
-  const rel=(clientY-r.top)/r.height
-  if(rel<0.25)return {mode:"insert",after:false}
-  if(rel>0.75)return {mode:"insert",after:true}
-  return {mode:"swap"}
+  return {mode:"insert",after:(clientY-r.top)/r.height>=0.5}
 }
-// 拖拽排序提交共用逻辑（swap 互换 / insert 插入），随后调用 render()
+// 拖拽排序提交共用逻辑（插入式），随后调用 render()
 function commitReorder(src,target,m,arr,key,render){
   const from=Number(src.dataset[key]),to=Number(target.dataset[key])
-  if(m.mode==="swap"){
-    if(from!==to){const t=arr[to];arr[to]=arr[from];arr[from]=t}
-  }else{
-    let insert=m.after?to+1:to
-    if(from<insert)insert-=1
-    if(insert<0)insert=0
-    reorderArr(arr,from,insert)
-  }
+  let insert=m.after?to+1:to
+  if(from<insert)insert-=1
+  if(insert<0)insert=0
+  reorderArr(arr,from,insert)
   clearDropIndicator()
   render()
 }
 // 移动端长按横幅拖动排序（桌面端保留原生 HTML5 拖拽）
 const HOLD_MS=550,HOLD_TOL=10
 let holdDrag=null
-// 触摸拖动中：高亮目标横幅（swap）或显示插入指示线（insert）
+// 触摸拖动中：显示插入指示线（目标横幅上/下半决定插前/插后）
 function holdDragMove(target,t,src,bannerSel){
   $$(bannerSel+".drag-over").forEach(b=>{if(b!==target)b.classList.remove("drag-over")})
   if(!src||src===target){clearDropIndicator();target.classList.remove("drag-over");return}
+  target.classList.remove("drag-over")
   const m=computeDropMode(target,t.clientY)
-  if(m.mode==="insert"){target.classList.remove("drag-over");showDropIndicator(target,m.after)}
-  else{clearDropIndicator();target.classList.add("drag-over")}
+  showDropIndicator(target,m.after)
 }
 // 为容器一次性绑定触摸长按拖动：长按横幅 HOLD_MS 后进入拖拽态，滑到目标横幅松手即排序
 function setupHoldDrag(containerSel,bannerSel,handlers){
@@ -1083,28 +1060,14 @@ function setupMenuDrag(){
   $$("#menuList .banner").forEach(b=>{
     b.addEventListener("dragover",e=>{
       e.preventDefault()
-      if(!dragSrc||dragSrc===b){clearDropIndicator();b.classList.remove("drag-over");return}
+      if(!dragSrc||dragSrc===b){clearDropIndicator();return}
       const m=computeDropMode(b,e.clientY)
-      if(m.mode==="insert"){b.classList.remove("drag-over");showDropIndicator(b,m.after)}
-      else{clearDropIndicator();b.classList.add("drag-over")}
+      showDropIndicator(b,m.after)
     })
-    b.addEventListener("dragleave",()=>{b.classList.remove("drag-over")})
     b.addEventListener("drop",e=>{
       e.preventDefault()
-      b.classList.remove("drag-over")
-      if(!dragSrc)return
-      const from=Number(dragSrc.dataset.idx),to=Number(b.dataset.idx)
-      const m=computeDropMode(b,e.clientY)
-      if(m.mode==="swap"){
-        if(from!==to){const t=menuItems[to];menuItems[to]=menuItems[from];menuItems[from]=t}
-      }else{
-        let insert=m.after?to+1:to
-        if(from<insert)insert-=1
-        if(insert<0)insert=0
-        reorderArr(menuItems,from,insert)
-      }
-      clearDropIndicator()
-      renderMenuList()
+      if(!dragSrc||dragSrc===b){clearDropIndicator();return}
+      commitReorder(dragSrc,b,computeDropMode(b,e.clientY),menuItems,"idx",renderMenuList)
     })
   })
   // 移动端：隐藏六点后，长按整条横幅拖动排序
@@ -1209,28 +1172,14 @@ function setupPanelDrag(){
   $$("#panelList .banner").forEach(b=>{
     b.addEventListener("dragover",e=>{
       e.preventDefault()
-      if(!dragSrc||dragSrc===b){clearDropIndicator();b.classList.remove("drag-over");return}
+      if(!dragSrc||dragSrc===b){clearDropIndicator();return}
       const m=computeDropMode(b,e.clientY)
-      if(m.mode==="insert"){b.classList.remove("drag-over");showDropIndicator(b,m.after)}
-      else{clearDropIndicator();b.classList.add("drag-over")}
+      showDropIndicator(b,m.after)
     })
-    b.addEventListener("dragleave",()=>{b.classList.remove("drag-over")})
     b.addEventListener("drop",e=>{
       e.preventDefault()
-      b.classList.remove("drag-over")
-      if(!dragSrc)return
-      const from=Number(dragSrc.dataset.pidx),to=Number(b.dataset.pidx)
-      const m=computeDropMode(b,e.clientY)
-      if(m.mode==="swap"){
-        if(from!==to){const t=panels[to];panels[to]=panels[from];panels[from]=t}
-      }else{
-        let insert=m.after?to+1:to
-        if(from<insert)insert-=1
-        if(insert<0)insert=0
-        reorderArr(panels,from,insert)
-      }
-      clearDropIndicator()
-      renderPanelList()
+      if(!dragSrc||dragSrc===b){clearDropIndicator();return}
+      commitReorder(dragSrc,b,computeDropMode(b,e.clientY),panels,"pidx",renderPanelList)
     })
   })
   // 移动端：隐藏六点后，长按整条横幅拖动排序
@@ -1334,28 +1283,14 @@ function setupPanelItemDrag(){
   $$("#panelItemForm .banner").forEach(b=>{
     b.addEventListener("dragover",e=>{
       e.preventDefault()
-      if(!dragSrc||dragSrc===b){clearDropIndicator();b.classList.remove("drag-over");return}
+      if(!dragSrc||dragSrc===b){clearDropIndicator();return}
       const m=computeDropMode(b,e.clientY)
-      if(m.mode==="insert"){b.classList.remove("drag-over");showDropIndicator(b,m.after)}
-      else{clearDropIndicator();b.classList.add("drag-over")}
+      showDropIndicator(b,m.after)
     })
-    b.addEventListener("dragleave",()=>{b.classList.remove("drag-over")})
     b.addEventListener("drop",e=>{
       e.preventDefault()
-      b.classList.remove("drag-over")
-      if(!dragSrc)return
-      const from=Number(dragSrc.dataset.pi),to=Number(b.dataset.pi)
-      const m=computeDropMode(b,e.clientY)
-      if(m.mode==="swap"){
-        if(from!==to){const t=panelEditor.items[to];panelEditor.items[to]=panelEditor.items[from];panelEditor.items[from]=t}
-      }else{
-        let insert=m.after?to+1:to
-        if(from<insert)insert-=1
-        if(insert<0)insert=0
-        reorderArr(panelEditor.items,from,insert)
-      }
-      clearDropIndicator()
-      renderPanelItems();renderPanelPreview()
+      if(!dragSrc||dragSrc===b){clearDropIndicator();return}
+      commitReorder(dragSrc,b,computeDropMode(b,e.clientY),panelEditor.items,"pi",()=>{renderPanelItems();renderPanelPreview()})
     })
   })
   // 移动端：隐藏六点后，长按整条横幅拖动排序
