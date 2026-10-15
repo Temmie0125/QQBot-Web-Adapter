@@ -258,6 +258,11 @@ function mountWebPage(page) {
     const iframe = document.createElement("iframe")
     iframe.src = `${def.src}?__webBase=${encodeURIComponent(WEB_BASE)}`
     iframe.className = "web-page-iframe"
+    // iframe 就绪后立即同步一次当前主题（后续切换由 broadcastThemeToIframes 实时推送）
+    iframe.addEventListener("load", () => {
+      const mode = getThemeMode()
+      try { iframe.contentWindow && iframe.contentWindow.postMessage({ type: "theme-changed", mode, dark: resolveThemeDark(mode) }, "*") } catch (e) {}
+    })
     container.appendChild(iframe)
   } else {
     container.innerHTML = def.html || ""
@@ -8152,6 +8157,81 @@ function setupEventListeners() {
   setupCodeModalListeners()
 }
 
+// ===== 界面主题（浅色 / 深色 / 跟随系统）=====
+// 约定：localStorage "qwa_theme" ∈ auto|light|dark；深色 = html[data-theme="dark"]
+// index.html 头部有一份等价内联脚本在 CSS 加载前执行，两边必须保持同一 key 与判定逻辑
+const THEME_STORAGE_KEY = "qwa_theme"
+const THEME_ORDER = ["auto", "light", "dark"]
+const THEME_LABELS = { auto: "跟随系统", light: "浅色", dark: "深色" }
+
+function getThemeMode() {
+  try {
+    const v = localStorage.getItem(THEME_STORAGE_KEY)
+    return v === "light" || v === "dark" ? v : "auto"
+  } catch { return "auto" }
+}
+
+function systemPrefersDark() {
+  return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches)
+}
+
+function resolveThemeDark(mode) {
+  return mode === "dark" || (mode === "auto" && systemPrefersDark())
+}
+
+// 套用主题模式：写存储、切换 html 属性、同步开关图标/设置页下拉/浏览器地址栏底色，并向 iframe 广播
+function applyThemeMode(mode, opts = {}) {
+  if (!THEME_ORDER.includes(mode)) mode = "auto"
+  try { localStorage.setItem(THEME_STORAGE_KEY, mode) } catch { /* 隐私模式等场景下静默 */ }
+  const dark = resolveThemeDark(mode)
+  const root = document.documentElement
+  if (dark) root.setAttribute("data-theme", "dark")
+  else root.removeAttribute("data-theme")
+  root.style.colorScheme = dark ? "dark" : "light"
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) meta.setAttribute("content", dark ? "#111318" : "#f0f2f5")
+  document.querySelectorAll("#themeToggleBtn [data-theme-icon]").forEach(el => {
+    el.style.display = el.getAttribute("data-theme-icon") === mode ? "" : "none"
+  })
+  const btn = document.getElementById("themeToggleBtn")
+  if (btn) btn.title = `界面主题：${THEME_LABELS[mode]}（点击切换）`
+  const sel = document.getElementById("setThemeMode")
+  if (sel && sel.value !== mode) sel.value = mode
+  if (opts.broadcast !== false) broadcastThemeToIframes()
+}
+
+// 向所有自定义页面 iframe 广播当前主题（扩展页面可监听 message 的 type === "theme-changed"）
+function broadcastThemeToIframes() {
+  const mode = getThemeMode()
+  broadcastToWebPages({ type: "theme-changed", mode, dark: resolveThemeDark(mode) })
+}
+
+// 兼容旧后端 "theme-changed" WS 广播的遗留调用（主题色/材质功能已移除）；实际广播由下一行完成
+function applyTheme() {}
+function applyTransitions() {}
+
+function initTheme() {
+  applyThemeMode(getThemeMode(), { broadcast: false })
+  const btn = document.getElementById("themeToggleBtn")
+  if (btn) {
+    btn.addEventListener("click", () => {
+      const next = THEME_ORDER[(THEME_ORDER.indexOf(getThemeMode()) + 1) % THEME_ORDER.length]
+      applyThemeMode(next)
+    })
+  }
+  const sel = document.getElementById("setThemeMode")
+  if (sel) sel.addEventListener("change", () => applyThemeMode(sel.value))
+  // 跟随系统模式下实时响应系统深浅切换
+  if (window.matchMedia) {
+    try {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)")
+      const onChange = () => { if (getThemeMode() === "auto") applyThemeMode("auto") }
+      if (mq.addEventListener) mq.addEventListener("change", onChange)
+      else if (mq.addListener) mq.addListener(onChange)
+    } catch { /* 老浏览器忽略 */ }
+  }
+}
+
 // ===== 设置页面 =====
 let settingsOriginal = {}  // 原始配置快照
 
@@ -8793,6 +8873,7 @@ let wasMobile = isMobile()
 
 async function init() {
   console.log("========== QQBot-Web v2 (debug) 初始化 ==========")
+  initTheme()
   setupEventListeners()
   bindEmojiPickerEvents()
   connectWebSocket()

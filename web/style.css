@@ -1,6 +1,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
+  color-scheme: light;
   --bg-primary: #f0f2f5;
   --bg-secondary: #ffffff;
   --bg-tertiary: #f7f8fa;
@@ -25,6 +26,37 @@
   --msg-bot: #e8f5e9;
   --danger: #ea4335;
   --success: #34a853;
+  /* 历史遗留别名：部分旧规则引用了未定义的 var(--text)/var(--bg-input)，在此补上 */
+  --text: #1a1a2e;
+  --bg-input: #f7f8fa;
+}
+
+/* ===== 深色主题（由 app.js 按 localStorage qwa_theme + 系统偏好写入 html[data-theme="dark"]）===== */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-primary: #111318;
+  --bg-secondary: #1a1d23;
+  --bg-tertiary: #22262e;
+  --bg-hover: #2a303a;
+  --bg-active: #2b3a5e;
+  --bg-chat: #0d0f13;
+  --text-primary: #e3e6ea;
+  --text-secondary: #a9b1bc;
+  --text-muted: #6f7680;
+  --accent: #6d87f8;
+  --accent-hover: #8299fa;
+  --accent-light: #26304d;
+  --border: #2e333d;
+  --border-light: #262b33;
+  --shadow: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.5);
+  --msg-self: #24405f;
+  --msg-other: #23272f;
+  --msg-bot: #203026;
+  --danger: #ee675c;
+  --success: #5bb974;
+  --text: #e3e6ea;
+  --bg-input: #22262e;
 }
 
 body {
@@ -3707,4 +3739,65 @@ body {
   .blacklist-container {
     max-height: calc(100vh - 110px);
   }
+}
+
+/* ============================================================
+ * 深色模式局部修正
+ * ------------------------------------------------------------
+ * 主题变量已在 :root[data-theme="dark"] 整体覆盖，此处只处理
+ * 写死在旧规则里的浅色值（rgba 黑色叠加、浅色徽章底色等）。
+ * 后续新增样式请优先用变量；确需写死浅色值时，把深色对应规则
+ * 一并加到这里。
+ * ============================================================ */
+:root[data-theme="dark"] .msg-item:hover { background: rgba(255,255,255,0.04); }
+:root[data-theme="dark"] .msg-item.is-bot .msg-bubble,
+:root[data-theme="dark"] .msg-item.msg-self .msg-bubble { border-color: #31473a; }
+
+/* 引用条：暖橙提亮；降级引用条：红提亮 */
+:root[data-theme="dark"] .msg-ref-bar { background: rgba(245,158,11,0.1); }
+:root[data-theme="dark"] .msg-ref-bar,
+:root[data-theme="dark"] .msg-ref-bar .msg-ref-nick { color: #fbbf24; }
+:root[data-theme="dark"] .msg-ref-bar-fallback,
+:root[data-theme="dark"] .msg-ref-bar-fallback .msg-ref-nick { color: #f87171 !important; }
+
+/* msg_id 回复预览条：绿提亮 */
+:root[data-theme="dark"] .msgid-reply-preview { color: #4ade80; }
+:root[data-theme="dark"] .msgid-reply-preview .reply-preview-cancel:hover { color: #4ade80; }
+
+/* 审核 / 回调 / 黑名单等徽章：浅色底深色字 → 半透明底亮字 */
+:root[data-theme="dark"] .msg-audit-badge.audit-pending { background: rgba(255,193,7,0.16); color: #ffd54f; }
+:root[data-theme="dark"] .msg-audit-badge.audit-passed { background: rgba(91,185,116,0.16); color: #81c995; }
+:root[data-theme="dark"] .msg-audit-badge.audit-rejected { background: rgba(238,103,92,0.16); color: #f28b82; }
+:root[data-theme="dark"] .msg-callback-badge { background: rgba(109,135,248,0.18); color: #a5b8ff; }
+
+/* @ 提及胶囊底色 */
+:root[data-theme="dark"] .msg-at-capsule { background: var(--accent-light); }
+
+/* 表单错误条 / 开关滑轨 / 禁用保存按钮 */
+:root[data-theme="dark"] .form-error { background: rgba(238,103,92,0.1); border-color: rgba(238,103,92,0.35); }
+:root[data-theme="dark"] .settings-switch-slider { background: #3a414b; }
+:root[data-theme="dark"] .settings-save-btn:disabled { background: #3a414b; }
+
+/* 群信息标签胶囊文字提亮 */
+:root[data-theme="dark"] .group-tag { color: #7ab3e8; }
+
+/* 系统通知胶囊 / 语音转写底 / 表格斑马纹：黑色叠加 → 白色叠加 */
+:root[data-theme="dark"] .msg-notice-pill { background: rgba(255,255,255,0.08); }
+:root[data-theme="dark"] .audio-asr { background: rgba(255,255,255,0.05); }
+:root[data-theme="dark"] .md-table tr:nth-child(even) { background: rgba(255,255,255,0.03); }
+:root[data-theme="dark"] .ff-row:hover { background: rgba(109,135,248,0.08); }
+:root[data-theme="dark"] .md-blockquote { background: rgba(109,135,248,0.1); }
+:root[data-theme="dark"] .md-mqqapi { background: rgba(109,135,248,0.15); }
+
+/* 滚动条 */
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); }
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.24); }
+
+/* 扩展页面 iframe：未加载完成时不再闪白 */
+:root[data-theme="dark"] .web-page-iframe { background: var(--bg-primary); }
+
+/* Toast：深色下描一圈亮边保证与背景区分 */
+:root[data-theme="dark"] .toast-msg {
+  background: rgba(40,44,52,0.96);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.12), 0 4px 12px rgba(0,0,0,0.5);
 }

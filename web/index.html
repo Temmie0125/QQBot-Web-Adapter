@@ -5,8 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="referrer" content="no-referrer">
   <title>QQBot 控制台</title>
+  <meta name="theme-color" content="#f0f2f5">
   <link rel="icon" href="favicon.ico">
-  <link rel="stylesheet" href="style.css?v=2">
+  <script>
+    // 防闪烁：CSS 加载前按 localStorage(qwa_theme) + 系统偏好先定好明暗（与 app.js 主题管理器同约定）
+    (function () {
+      try {
+        var m = localStorage.getItem("qwa_theme")
+        if (m !== "light" && m !== "dark") m = "auto"
+        var dark = m === "dark" || (m === "auto" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches)
+        if (dark) document.documentElement.setAttribute("data-theme", "dark")
+        document.documentElement.style.colorScheme = dark ? "dark" : "light"
+      } catch (e) {}
+    })()
+  </script>
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <div id="app">
@@ -25,6 +38,11 @@
       </div>
       <div class="topbar-title">QQBot Web 控制台</div>
       <div class="topbar-right">
+        <button class="topbar-icon-btn" id="themeToggleBtn" title="界面主题">
+          <svg data-theme-icon="auto" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 010 18z" fill="currentColor" stroke="none"/></svg>
+          <svg data-theme-icon="light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+          <svg data-theme-icon="dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" style="display:none"><path d="M20.5 14.1A8.5 8.5 0 119.9 3.5a7 7 0 0010.6 10.6z"/></svg>
+        </button>
         <button class="topbar-icon-btn" id="addBotBtn" title="添加 Bot">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
@@ -478,6 +496,19 @@
             <div class="settings-inner">
             <h2>系统设置</h2>
             <p class="settings-desc">修改敏感设置需要验证码。</p>
+
+            <!-- 界面设置（仅保存在本机浏览器，不进后端配置） -->
+            <div class="settings-section">界面设置</div>
+            <div class="settings-group">
+              <label class="settings-label">界面主题<span class="settings-help" data-tip="控制台配色：跟随系统跟随浏览器/系统的深浅色偏好并实时切换；浅色/深色为强制指定。选择只保存在当前浏览器，不影响其他设备">?</span></label>
+              <div class="settings-select-row">
+                <select class="settings-select" id="setThemeMode">
+                  <option value="auto">跟随系统</option>
+                  <option value="light">浅色</option>
+                  <option value="dark">深色</option>
+                </select>
+              </div>
+            </div>
 
             <!-- 基础设置 -->
             <div class="settings-section">基础设置</div>
@@ -1190,6 +1221,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
