@@ -4,6 +4,30 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Redis 查看</title>
+<script>
+// 主题同步：读取主面板共享的 qwa_theme（auto|light|dark），并监听系统/主面板的深浅切换
+(function () {
+  try {
+    var m = localStorage.getItem("qwa_theme")
+    if (m !== "light" && m !== "dark") m = "auto"
+    var apply = function () {
+      var dark = m === "dark" || (m === "auto" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches)
+      if (dark) document.documentElement.setAttribute("data-theme", "dark")
+      else document.documentElement.removeAttribute("data-theme")
+      document.documentElement.style.colorScheme = dark ? "dark" : "light"
+    }
+    apply()
+    window.addEventListener("message", function (e) {
+      if (e && e.data && e.data.type === "theme-changed") { m = e.data.mode || "auto"; apply() }
+    })
+    if (window.matchMedia) {
+      var mq = matchMedia("(prefers-color-scheme: dark)")
+      var onChange = function () { if (m === "auto") apply() }
+      mq.addEventListener ? mq.addEventListener("change", onChange) : mq.addListener(onChange)
+    }
+  } catch (err) {}
+})()
+</script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -156,6 +180,49 @@ tr.detail-row > td {
 }
 .toast.show { opacity: 1; }
 .toast.err { background: #ea4335; }
+
+/* ====== 深色模式（整页为硬编码浅色，此处逐一覆盖） ====== */
+html[data-theme="dark"] body { background: #111318; color: #e3e6ea; }
+html[data-theme="dark"] .search-bar { background: #1a1d23; border-color: #2e333d; }
+html[data-theme="dark"] .search-bar input { color: #e3e6ea; }
+html[data-theme="dark"] .search-bar input::placeholder { color: #6f7680; }
+html[data-theme="dark"] .hints { color: #6f7680; }
+html[data-theme="dark"] .hints code { background: #26304d; color: #8ea0f9; }
+html[data-theme="dark"] .hints code:hover { background: #2b3a5e; }
+html[data-theme="dark"] .hints .btn-refresh { border-color: #2e333d; background: #1a1d23; color: #a9b1bc; }
+html[data-theme="dark"] .hints .btn-refresh:hover { background: #2a303a; color: #e3e6ea; }
+html[data-theme="dark"] .stats { background: #1a1d23; border-color: #2e333d; color: #a9b1bc; }
+html[data-theme="dark"] .stats .count { color: #5bb974; }
+html[data-theme="dark"] .stats .sep { color: #2e333d; }
+html[data-theme="dark"] #table-wrapper { background: #1a1d23; border-color: #2e333d; }
+html[data-theme="dark"] th { color: #a9b1bc; background: #20242c; border-bottom-color: #2e333d; }
+html[data-theme="dark"] td { border-bottom-color: #262b33; }
+html[data-theme="dark"] tr.key-row:hover { background: #22262e; }
+html[data-theme="dark"] tr.key-row.selected { background: #26304d; }
+html[data-theme="dark"] .b-string { background: #26304d; color: #8ea0f9; }
+html[data-theme="dark"] .b-hash   { background: rgba(91,185,116,.16); color: #5bb974; }
+html[data-theme="dark"] .b-list   { background: rgba(255,168,46,.14); color: #ffb74d; }
+html[data-theme="dark"] .b-set    { background: rgba(156,110,255,.16); color: #b39bff; }
+html[data-theme="dark"] .b-zset   { background: rgba(240,98,146,.16); color: #ff80ab; }
+html[data-theme="dark"] .b-none   { background: rgba(238,103,92,.16); color: #f28b82; }
+html[data-theme="dark"] .ttl { color: #a9b1bc; }
+html[data-theme="dark"] .ttl-expired { color: #f28b82; }
+html[data-theme="dark"] tr.detail-row > td { border-bottom-color: #2e333d; }
+html[data-theme="dark"] .detail-wrap { background: #20242c; border-color: #2e333d; }
+html[data-theme="dark"] .detail-head { border-bottom-color: #2e333d; background: #1a1d23; }
+html[data-theme="dark"] .detail-head .dh-key { color: #e3e6ea; }
+html[data-theme="dark"] .detail-head .dh-meta { color: #a9b1bc; }
+html[data-theme="dark"] .btn-outline { border-color: #2e333d; color: #a9b1bc; }
+html[data-theme="dark"] .btn-outline:hover { background: #2a303a; color: #e3e6ea; }
+html[data-theme="dark"] .btn-danger-outline { border-color: rgba(238,103,92,.4); color: #f28b82; }
+html[data-theme="dark"] .btn-danger-outline:hover { background: rgba(238,103,92,.14); }
+html[data-theme="dark"] .detail-body::-webkit-scrollbar-thumb { background: #3a414b; }
+html[data-theme="dark"] .value-box { background: #16181d; border-color: #2e333d; color: #e3e6ea; }
+html[data-theme="dark"] .hash-table { border-color: #2e333d; }
+html[data-theme="dark"] .hash-table td { border-bottom-color: #262b33; }
+html[data-theme="dark"] .hash-table td:first-child { color: #8ea0f9; background: #20242c; }
+html[data-theme="dark"] .empty,
+html[data-theme="dark"] .loading-text { color: #6f7680; }
 </style>
 </head>
 <body>

@@ -4,6 +4,30 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>菜单与面板</title>
+<script>
+// 主题同步：读取主面板共享的 qwa_theme（auto|light|dark），并监听系统/主面板的深浅切换
+(function () {
+  try {
+    var m = localStorage.getItem("qwa_theme")
+    if (m !== "light" && m !== "dark") m = "auto"
+    var apply = function () {
+      var dark = m === "dark" || (m === "auto" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches)
+      if (dark) document.documentElement.setAttribute("data-theme", "dark")
+      else document.documentElement.removeAttribute("data-theme")
+      document.documentElement.style.colorScheme = dark ? "dark" : "light"
+    }
+    apply()
+    window.addEventListener("message", function (e) {
+      if (e && e.data && e.data.type === "theme-changed") { m = e.data.mode || "auto"; apply() }
+    })
+    if (window.matchMedia) {
+      var mq = matchMedia("(prefers-color-scheme: dark)")
+      var onChange = function () { if (m === "auto") apply() }
+      mq.addEventListener ? mq.addEventListener("change", onChange) : mq.addListener(onChange)
+    }
+  } catch (err) {}
+})()
+</script>
 <style>
 :root{
   --accent:#4f6ef7; --accent-weak:#eef1fe; --accent-2:#3b56d4;
@@ -11,6 +35,15 @@
   --text:#1f2430; --text2:#8a90a2; --danger:#ef4444; --danger-weak:#fdecec;
   --radius:14px; --shadow:0 1px 2px rgba(20,24,40,.04),0 6px 20px rgba(20,24,40,.06);
   --shadow-lg:0 10px 30px rgba(20,24,40,.10);
+}
+/* 深色主题（主题同步脚本写入 html[data-theme="dark"]） */
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --accent:#6d87f8; --accent-weak:#26304d; --accent-2:#8299fa;
+  --bg:#111318; --card:#1a1d23; --border:#2e333d;
+  --text:#e3e6ea; --text2:#a9b1bc; --danger:#f28b82; --danger-weak:rgba(242,139,130,.14);
+  --radius:14px; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.5);
+  --shadow-lg:0 10px 30px rgba(0,0,0,.6);
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden}
@@ -294,6 +327,62 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 .empty{font-size:13px;color:var(--text2);padding:6px 2px}
 @media (max-width:720px){.content{padding:16px}.topbar{padding:0 16px}.modal-overlay{padding:8px}.modal{width:auto}.edit-form .grid{grid-template-columns:1fr}.section{padding:18px 16px}}
 @media (max-width:480px){.content{padding:12px}.section{padding:16px 14px}.banner{gap:8px;padding:10px 12px}}
+
+/* ===== 深色模式局部修正（变量覆盖不到的硬编码浅色值） ===== */
+html[data-theme="dark"] .topbar{background:rgba(26,29,35,.86)}
+html[data-theme="dark"] .drop .trigger,
+html[data-theme="dark"] .drop-panel{background:var(--card)}
+html[data-theme="dark"] .drop .trigger:hover{border-color:#3a414b}
+html[data-theme="dark"] .drop-panel .opt:hover{background:#22262e}
+html[data-theme="dark"] .btn.ghost{background:#2a303a}
+html[data-theme="dark"] .btn.ghost:hover{background:#333a46}
+html[data-theme="dark"] .btn.danger{background:var(--card);border-color:rgba(242,139,130,.4)}
+html[data-theme="dark"] .phone{background:#16181d}
+html[data-theme="dark"] .phone-bar{color:var(--text)}
+html[data-theme="dark"] .phone-bar .bar-ico{color:#a9b1bc}
+html[data-theme="dark"] .phone-bar .bar-status{color:#34c579}
+html[data-theme="dark"] .phone-bar .bar-status.off{color:#5a6270}
+html[data-theme="dark"] .phone-bar .bar-status.off .status-dot{background:#3a414b}
+html[data-theme="dark"] .phone-bar .bar-arrow{color:#4a5260}
+html[data-theme="dark"] .phone-body{background:linear-gradient(180deg,#14161b,#111318)}
+html[data-theme="dark"] .phone-input .box{background:#22262e}
+html[data-theme="dark"] .qq-menu-bar::-webkit-scrollbar-thumb{background:#3a414b}
+html[data-theme="dark"] .qq-menu-btn{background:var(--card);border-color:var(--border)}
+html[data-theme="dark"] .qq-menu-btn.on{background:var(--accent-weak)}
+html[data-theme="dark"] .qq-sub-pop,
+html[data-theme="dark"] .qq-panel{background:var(--card)}
+html[data-theme="dark"] .qq-sub-head,
+html[data-theme="dark"] .qq-panel-head{color:var(--text)}
+html[data-theme="dark"] .qq-cmd{border-bottom-color:rgba(255,255,255,.06)}
+html[data-theme="dark"] .banner{background:#20242c}
+html[data-theme="dark"] .banner:hover{border-color:#3a414b}
+html[data-theme="dark"] .banner .handle{color:#4a5260}
+html[data-theme="dark"] .tag{background:#2a303a}
+html[data-theme="dark"] .tag-admin{background:rgba(242,139,130,.15)}
+html[data-theme="dark"] .edit-form{background:linear-gradient(180deg,#1c2230,#1a2130)}
+html[data-theme="dark"] .edit-form input{background-color:#22262e}
+html[data-theme="dark"] .dd-val{background-color:#20242c}
+html[data-theme="dark"] .dd:hover .dd-val{border-color:#3a414b;background-color:var(--card)}
+html[data-theme="dark"] .dd.open .dd-val{background-color:var(--card)}
+html[data-theme="dark"] .dd.disabled .dd-val{background-color:#22262e;border-color:var(--border)}
+html[data-theme="dark"] .dd-arrow{border-right-color:#8a92a3;border-bottom-color:#8a92a3}
+html[data-theme="dark"] .dd-list{background:var(--card);border-color:#3a414b}
+html[data-theme="dark"] .dd-list li.disabled{color:#566070}
+html[data-theme="dark"] .dd-list li.disabled:hover{color:#566070}
+html[data-theme="dark"] .seg{background:#22262e}
+html[data-theme="dark"] .seg button{background:var(--card)}
+html[data-theme="dark"] .seg button:hover{border-color:#3a414b}
+html[data-theme="dark"] .seg button.active{background:var(--card)}
+html[data-theme="dark"] .switch-toggle .knob,
+html[data-theme="dark"] .bk-toggle .knob{background:#3a414b}
+/* 选中态规则需同样带前缀，否则被上面的灰色覆盖压掉（同优先级时靠源顺序取胜） */
+html[data-theme="dark"] .switch-toggle input:checked+.knob,
+html[data-theme="dark"] .bk-toggle input:checked+.knob{background:var(--accent)}
+html[data-theme="dark"] .sub-edit{border-color:#3a414b;background:var(--card)}
+html[data-theme="dark"] .sub-banner{background:#20242c}
+html[data-theme="dark"] .add-box{border-color:#3a414b;background:var(--card)}
+html[data-theme="dark"] .oid-avatar{background:#2a303a}
+html[data-theme="dark"] .scope:hover{border-color:#3a414b}
 </style>
 </head>
 <body>

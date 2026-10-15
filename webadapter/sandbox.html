@@ -5,6 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>try{if(window.self!==window.top)document.documentElement.className+=' embedded'}catch(e){}</script>
 <title>沙盒模拟 · QQBot</title>
+<script>
+// 主题同步：读取主面板共享的 qwa_theme（auto|light|dark），并监听系统/主面板的深浅切换
+(function () {
+  try {
+    var m = localStorage.getItem("qwa_theme")
+    if (m !== "light" && m !== "dark") m = "auto"
+    var apply = function () {
+      var dark = m === "dark" || (m === "auto" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches)
+      if (dark) document.documentElement.setAttribute("data-theme", "dark")
+      else document.documentElement.removeAttribute("data-theme")
+      document.documentElement.style.colorScheme = dark ? "dark" : "light"
+    }
+    apply()
+    window.addEventListener("message", function (e) {
+      if (e && e.data && e.data.type === "theme-changed") { m = e.data.mode || "auto"; apply() }
+    })
+    if (window.matchMedia) {
+      var mq = matchMedia("(prefers-color-scheme: dark)")
+      var onChange = function () { if (m === "auto") apply() }
+      mq.addEventListener ? mq.addEventListener("change", onChange) : mq.addListener(onChange)
+    }
+  } catch (err) {}
+})()
+</script>
 <link id="themeCss" rel="stylesheet" href="">
 <style>
 :root{
@@ -15,6 +39,17 @@
   --radius:12px; --shadow:0 1px 2px rgba(20,24,40,.04),0 6px 20px rgba(20,24,40,.06);
   --bg-secondary:#fff; --bg-tertiary:#f1f2f6; --bg-hover:#f5f6fa;
   --msg-bot:#d6f5de;
+}
+/* 深色主题（主题同步脚本写入 html[data-theme="dark"]） */
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --accent:#6d87f8; --accent-weak:#26304d;
+  --bg:#111318; --card:#1a1d23; --border:#2e333d;
+  --text:#e3e6ea; --text2:#a9b1bc; --text-muted:#6f7680;
+  --danger:#f28b82; --success:#34c579;
+  --radius:12px; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.5);
+  --bg-secondary:#1a1d23; --bg-tertiary:#22262e; --bg-hover:#2a303a;
+  --msg-bot:#203026;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
@@ -164,6 +199,36 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC
 .md-btn{display:inline-block}
 .md-pre{background:var(--bg-tertiary);padding:8px 10px;border-radius:8px;overflow:auto;font-size:12px}
 .md-inline-code{background:var(--bg-tertiary);padding:1px 5px;border-radius:4px;font-size:12px}
+
+/* ===== 深色模式局部修正（变量覆盖不到的硬编码浅色值） ===== */
+html[data-theme="dark"] body{background:#111318}
+html[data-theme="dark"] .topbar{background:rgba(26,29,35,.9)}
+html[data-theme="dark"] .topbar .sb-sel,
+html[data-theme="dark"] .drop .trigger,
+html[data-theme="dark"] .drop-panel,
+html[data-theme="dark"] .field input,
+html[data-theme="dark"] .field textarea,
+html[data-theme="dark"] .field select,
+html[data-theme="dark"] .tab,
+html[data-theme="dark"] .phone-input .plus{background:var(--card)}
+html[data-theme="dark"] .drop .trigger:hover{border-color:#3a414b}
+html[data-theme="dark"] .drop-panel .opt:hover{background:#22262e}
+html[data-theme="dark"] .btn.ghost{background:#2a303a}
+html[data-theme="dark"] .phone{background:#16181d}
+html[data-theme="dark"] .phone-bar{color:var(--text)}
+html[data-theme="dark"] .phone-bar .bar-ico{color:#a9b1bc}
+html[data-theme="dark"] .phone-bar .bar-status{color:#34c579}
+html[data-theme="dark"] .phone-bar .bar-arrow{color:#4a5260}
+html[data-theme="dark"] .phone-body{background:linear-gradient(180deg,#14161b,#111318)}
+html[data-theme="dark"] .phone-tool .tool-ico{color:#5a6270}
+html[data-theme="dark"] .phone-input textarea{background:#22262e}
+html[data-theme="dark"] .plus-pop,
+html[data-theme="dark"] .plus-pop .pp-title,
+html[data-theme="dark"] .ctx-pop{background:var(--card)}
+html[data-theme="dark"] .ctx-pop-head{color:var(--text)}
+html[data-theme="dark"] .msg-bubble{background:var(--card)}
+html[data-theme="dark"] .msg-self .msg-bubble{border-color:#31406b}
+html[data-theme="dark"] .msg-notice-pill{background:rgba(255,255,255,.08)}
 </style>
 </head>
 <body>
@@ -471,17 +536,17 @@ function renderArk(seg){
   kv.forEach(function(k){if(k.key&&k.key!=='#LIST#')map[k.key]=k.value})
   if(tpl===23){
     var list='',l=kv.filter(function(k){return k.key==='#LIST#'})[0]
-    if(l&&Array.isArray(l.obj))list=l.obj.map(function(o){var d=(o.obj_kv||[]).filter(function(x){return x.key==='desc'})[0];var lk=(o.obj_kv||[]).filter(function(x){return x.key==='link'})[0];return '<div style="padding:5px 0;border-top:1px solid #eee;font-size:13px">'+(d?esc(d.value):'')+(lk&&lk.value?' <a href="'+esc(lk.value)+'" style="color:var(--accent)">↗</a>':'')+'</div>'}).join('')
-    return '<div style="background:#fff;border:1px solid #e7e9f0;border-radius:10px;padding:10px 12px;min-width:200px"><div style="font-size:12px;color:#888">'+esc(map['#PROMPT#']||'')+'</div><div style="font-size:14px;font-weight:600;margin:4px 0">'+esc(map['#DESC#']||'')+'</div>'+list+'</div>'
+    if(l&&Array.isArray(l.obj))list=l.obj.map(function(o){var d=(o.obj_kv||[]).filter(function(x){return x.key==='desc'})[0];var lk=(o.obj_kv||[]).filter(function(x){return x.key==='link'})[0];return '<div style="padding:5px 0;border-top:1px solid var(--border);font-size:13px">'+(d?esc(d.value):'')+(lk&&lk.value?' <a href="'+esc(lk.value)+'" style="color:var(--accent)">↗</a>':'')+'</div>'}).join('')
+    return '<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;min-width:200px"><div style="font-size:12px;color:var(--text2)">'+esc(map['#PROMPT#']||'')+'</div><div style="font-size:14px;font-weight:600;margin:4px 0">'+esc(map['#DESC#']||'')+'</div>'+list+'</div>'
   }
   if(tpl===24){
     var arkImg=map['#IMG#']?mediaUrl(map['#IMG#']):''
-    return '<div style="background:#fff;border:1px solid #e7e9f0;border-radius:10px;overflow:hidden;min-width:200px">'+(arkImg?'<img src="'+esc(arkImg)+'" style="width:100%;max-height:140px;object-fit:cover" onerror="this.style.display=\'none\'">':'')+'<div style="padding:10px 12px"><div style="font-size:15px;font-weight:700">'+esc(map['#TITLE#']||'')+'</div><div style="font-size:12px;color:#888;margin-top:3px">'+esc(map['#SUBTITLE#']||'')+'</div><div style="font-size:13px;margin-top:4px">'+esc(map['#DESC#']||'')+'</div><div style="font-size:12px;color:var(--accent);margin-top:4px">'+esc(map['#PROMPT#']||'')+'</div></div></div>'
+    return '<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;min-width:200px">'+(arkImg?'<img src="'+esc(arkImg)+'" style="width:100%;max-height:140px;object-fit:cover" onerror="this.style.display=\'none\'">':'')+'<div style="padding:10px 12px"><div style="font-size:15px;font-weight:700">'+esc(map['#TITLE#']||'')+'</div><div style="font-size:12px;color:var(--text2);margin-top:3px">'+esc(map['#SUBTITLE#']||'')+'</div><div style="font-size:13px;margin-top:4px">'+esc(map['#DESC#']||'')+'</div><div style="font-size:12px;color:var(--accent);margin-top:4px">'+esc(map['#PROMPT#']||'')+'</div></div></div>'
   }
   if(tpl===37){
-    return '<div style="background:#fff;border:1px solid #e7e9f0;border-radius:10px;overflow:hidden;min-width:200px">'+(map['#METACOVER#']?'<img src="'+esc(map['#METACOVER#'])+'" style="width:100%;max-height:120px;object-fit:cover" onerror="this.style.display=\'none\'">':'')+'<div style="padding:10px 12px"><div style="font-size:14px;font-weight:700">'+esc(map['#METATITLE#']||'')+'</div><div style="font-size:13px;color:#555">'+esc(map['#METASUBTITLE#']||'')+'</div><div style="font-size:12px;color:#888;margin-top:3px">'+esc(map['#PROMPT#']||'')+'</div></div></div>'
+    return '<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;min-width:200px">'+(map['#METACOVER#']?'<img src="'+esc(map['#METACOVER#'])+'" style="width:100%;max-height:120px;object-fit:cover" onerror="this.style.display=\'none\'">':'')+'<div style="padding:10px 12px"><div style="font-size:14px;font-weight:700">'+esc(map['#METATITLE#']||'')+'</div><div style="font-size:13px;color:var(--text2)">'+esc(map['#METASUBTITLE#']||'')+'</div><div style="font-size:12px;color:var(--text2);margin-top:3px">'+esc(map['#PROMPT#']||'')+'</div></div></div>'
   }
-  return '<div style="background:#fff;border:1px solid #e7e9f0;border-radius:10px;padding:10px">Ark 模板 '+esc(tpl)+'</div>'
+  return '<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px">Ark 模板 '+esc(tpl)+'</div>'
 }
 // 从 bot 键盘按钮对象中递归提取 mqqapi://aio/inlinecmd 的 command/enter
 function extractInlineCmd(b){
@@ -541,7 +606,7 @@ function parseMd(text){
     if(mm){closeUl();html+=blocks[+line.trim().slice(2,-1)];continue}
     var h=line.match(/^(#{1,3})\s+(.*)$/)
     if(h){closeUl();var lv=h[1].length;html+='<div style="font-weight:700;font-size:'+[17,15,14][lv-1]+'px;margin:4px 0">'+inline(esc(h[2]))+'</div>';continue}
-    if(/^>\s?/.test(line)){closeUl();html+='<div style="border-left:3px solid #cdd2e0;padding-left:8px;color:var(--text2);margin:3px 0">'+inline(esc(line.replace(/^>\s?/,'')))+'</div>';continue}
+    if(/^>\s?/.test(line)){closeUl();html+='<div style="border-left:3px solid var(--border);padding-left:8px;color:var(--text2);margin:3px 0">'+inline(esc(line.replace(/^>\s?/,'')))+'</div>';continue}
     var li=line.match(/^[-*]\s+(.*)$/)
     if(li){if(!inUl){html+='<ul style="margin:3px 0;padding-left:20px">';inUl=true}html+='<li>'+inline(esc(li[1]))+'</li>';continue}
     if(line.trim()===''){closeUl();continue}

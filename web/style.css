@@ -3801,3 +3801,19 @@ body {
   background: rgba(40,44,52,0.96);
   box-shadow: 0 0 0 1px rgba(255,255,255,0.12), 0 4px 12px rgba(0,0,0,0.5);
 }
+
+/* 问号提示浮层：浅色模式是「深底白字」，深色模式反转成亮底深字 */
+:root[data-theme="dark"] .settings-help::after {
+  background: #3a414b;
+  color: var(--text-primary);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+/* 原生 select：background:transparent 会让 Chromium 用默认白底渲染弹出列表，深色下给实底 */
+:root[data-theme="dark"] .bot-md-select { background: var(--bg-tertiary); }
+/* 原生 select 弹出选项统一配色（Chromium/Firefox 按 option 自身配色渲染弹层） */
+:root[data-theme="dark"] select option,
+:root[data-theme="dark"] select optgroup {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}

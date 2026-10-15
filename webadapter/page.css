@@ -14,3 +14,15 @@
 .pg-guide ul, .pg-guide ol { margin: 8px 0; padding-left: 22px; }
 .pg-guide li { margin: 4px 0; }
 .pg-guide hr { border: none; border-top: 1px solid #e6e8ec; margin: 24px 0; }
+
+/* ===== 深色模式 ===== */
+html[data-theme="dark"] { color-scheme: dark; }
+html[data-theme="dark"] body { background: #111318; }
+html[data-theme="dark"] .pg-guide { color: #e3e6ea; }
+html[data-theme="dark"] .pg-guide h2 { border-bottom-color: #2e333d; }
+html[data-theme="dark"] .pg-guide code { background: #26304d; color: #ff8a80; }
+html[data-theme="dark"] .pg-guide pre { background: #16181d; border-color: #2e333d; }
+html[data-theme="dark"] .pg-guide pre code { color: #c9d1d9; }
+html[data-theme="dark"] .pg-guide th, html[data-theme="dark"] .pg-guide td { border-color: #2e333d; }
+html[data-theme="dark"] .pg-guide th { background: #20242c; }
+html[data-theme="dark"] .pg-guide blockquote { border-left-color: #6d87f8; background: #26304d; color: #c3cdf5; }
