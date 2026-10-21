@@ -1,12 +1,14 @@
 # QQBot-Web-Adapter
 
-为 QQBot 基于 [TRSS-Yunzai] 提供 Web 管理控制台，支持浏览器管理 QQ 机器人。
+为 QQBot 基于 [TRSS-Yunzai](https://github.com/TimeRainStarSky/Yunzai) 提供 Web 管理控制台，支持浏览器管理 QQ 机器人。
 
-使用本适配器首先请安装我的自用版 [QQBot-Plugin](https://gitee.com/wind-trace-typ/Yunzai-QQBot-Plugin)，这样才能正常使用此功能。
+> 本仓库 Fork 自上游 [wind-trace-typ/QQBot-Web-Adapter](https://gitee.com/wind-trace-typ/QQBot-Web-Adapter)，感谢上游作者的开发与维护，上游交流群见文末[「上游与反馈」](#上游与反馈)。Fork 以自用定制为主，需搭配 [Fork 版 QQBot-Plugin](https://github.com/Temmie0125/Yunzai-QQBot-Plugin)（`fork` 分支）使用。
 
-本插件消息记录功能支持 **Redis**（默认）和 **SQLite** 两种存储后端，可按需切换。有任何 bug 可提 issue 或加入 [@windtrace/qq-group-bot](https://qm.qq.com/q/LXwq9hplKu) 本群讨论。
+使用本适配器首先请安装 Fork 版 [QQBot-Plugin](https://github.com/Temmie0125/Yunzai-QQBot-Plugin)，这样才能正常使用此功能。
 
-此外若是安装了我的[全量群记录](https://gitee.com/wind-trace-typ/full-group-record)这个插件，可以首先找到 `plugins/example/全量记录.js` 删除，再安装本插件（功能重复，不删除也不影响）。
+本插件消息记录功能支持 **Redis**（默认）和 **SQLite** 两种存储后端，可按需切换。本 Fork 有任何 bug 可提 [issue](https://github.com/Temmie0125/QQBot-Web-Adapter/issues)。
+
+此外若是安装了上游作者的[全量群记录](https://gitee.com/wind-trace-typ/full-group-record)这个插件，可以首先找到 `plugins/example/全量记录.js` 删除，再安装本插件（功能重复，不删除也不影响）。
 
 ## 特性
 
@@ -24,21 +26,28 @@
 - **登录bot** — 可以直接在web端使用appid登录bot或者通过扫码登录bot
 - **通知推送** — 可以将变更设置、验证码、登录失败等通知推送到指定用户的私聊
 - **聊天记录解析** — 可以将聊天记录解析成卡片的格式，点击可查阅内容
-- **自定义页面** — 支持开发者自定义页面开发，可自行安排页面内容，页面均可在web端侧边栏访问，支持自定义api（自带web鉴权），具体参考[🔗page.md](https://gitee.com/wind-trace-typ/QQBot-Web-Adapter/blob/master/page.md)
+- **自定义页面** — 支持开发者自定义页面开发，可自行安排页面内容，页面均可在web端侧边栏访问，支持自定义api（自带web鉴权），具体参考[🔗page.md](https://github.com/Temmie0125/QQBot-Web-Adapter/blob/master/page.md)
 - **自定义表情包列表** — 支持自定义上传表情包列表，支持通过zip压缩包一键上传表情包合集
+
+## 本 Fork 的主要改动
+
+在上游功能的基础上，本 Fork 另含以下自用修改（详见 [commit 历史](https://github.com/Temmie0125/QQBot-Web-Adapter/commits/master/)）：
+
+- 前端适配深色/浅色模式切换
+- 仪表盘私聊数量统计修复（private-chats 返回分页对象却按数组取 length）
+- 移动端 dvh 视口修复，菜单与面板页支持插入式拖拽排序
+- Bot 下拉新增消息发送模式设置（对接 QQBot-Plugin 的 `auto` 智能判定）
+- resolve-openid 用户资料兜底加入 users 缓存（好友表只存真实好友）
 
 ## 安装
 
 在 Yunzai 的根目录下执行以下命令安装本插件：
 
-#### Gitee 链接（当前安装需要登录）：
 ```bash
-git clone https://gitee.com/wind-trace-typ/QQBot-Web-Adapter.git ./plugins/QQBot-Web-Adapter
+git clone https://github.com/Temmie0125/QQBot-Web-Adapter.git ./plugins/QQBot-Web-Adapter
 ```
-#### Gitcode 链接（可直接安装）:
-```bash
-git clone https://gitcode.com/wind-trace/QQBot-Web-Adapter.git ./plugins/QQBot-Web-Adapter
-```
+
+> 上游原版安装（Gitee 链接当前需要登录）：[wind-trace-typ/QQBot-Web-Adapter](https://gitee.com/wind-trace-typ/QQBot-Web-Adapter)，Gitcode 镜像：[wind-trace/QQBot-Web-Adapter](https://gitcode.com/wind-trace/QQBot-Web-Adapter)。注意上游原版需搭配上游版 QQBot-Plugin 使用。
 
 在 Yunzai 的根目录下执行以下命令安装本插件所需要的依赖：
 ```bash
@@ -155,6 +164,7 @@ QQBot-Web-Adapter/
 7. 如果只需要在内网访问可将设置中`公网访问开关`关闭。
 8. 如果需要自定义页面且需要注册自定义的api，请使用插件提供的方法注册api，这样自带鉴权，防止漏洞，若是需要注册可以访问或修改本地文件的api，请自行添加各类防护如防止路径穿越以及各类危险字符等。
 
-## 交流群
+## 上游与反馈
 
-[@windtrace/qq-group-bot](https://qm.qq.com/q/LXwq9hplKu)
+- 本 Fork 的问题请提 [issue](https://github.com/Temmie0125/QQBot-Web-Adapter/issues)
+- 上游原版仓库：[wind-trace-typ/QQBot-Web-Adapter](https://gitee.com/wind-trace-typ/QQBot-Web-Adapter)，上游交流群：[@windtrace/qq-group-bot](https://qm.qq.com/q/LXwq9hplKu)
