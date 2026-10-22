@@ -48,6 +48,9 @@ const DEFAULT_CONFIG = {
   enableQuanliangCommands: true,
   httpLogSilent: false,
   publicAccess: true,
+  // 侧边栏保持顶级显示的页面所属插件名（即 plugins/ 下的目录名）；
+  // 其余插件的自定义页面统一收纳进「拓展页面」折叠分组
+  sidebarTopPlugins: ["QQBot-Web-Adapter", "QQBot-Plugin", "ImageBed-Plugin"],
 }
 
 let config = { ...DEFAULT_CONFIG }
@@ -68,6 +71,9 @@ async function loadConfig() {
     logger.debug(`[QQBot-Web] 配置文件 ${CONFIG_FILE} 不存在或读取失败，使用默认配置`)
   }
   // 将配置同步到 Bot 全局（供 adapter 使用）
+  // 侧边栏顶级插件白名单：容错为字符串数组
+  if (!Array.isArray(config.sidebarTopPlugins)) config.sidebarTopPlugins = [...DEFAULT_CONFIG.sidebarTopPlugins]
+  config.sidebarTopPlugins = config.sidebarTopPlugins.map(s => String(s).trim()).filter(Boolean)
   // 明确写为 true，以便 adapter 侧用 === true 判断（区分 undefined / 未安装场景）
   Bot.autoRecordMessage = config.autoRecordMessage !== false
   Bot.autoDownloadImgorVideo = config.autoDownloadImgorVideo !== false
@@ -269,8 +275,11 @@ function _normalizePage(pluginName, def) {
   const assetsDirs = assetsRaw.map(s => String(s).trim()).filter(s => /^[A-Za-z0-9_-]+$/.test(s))
   // 排序优先级：数值越小越靠前（与插件加载 priority 约定一致）；未设置默认为 100
   const priority = Number.isFinite(def.priority) ? def.priority : 100
+  // 侧边栏顶级显示：插件在 sidebarTopPlugins 白名单中，或描述符显式 top: true
+  const topPlugins = Array.isArray(config.sidebarTopPlugins) ? config.sidebarTopPlugins : []
+  const top = topPlugins.includes(plugin) || def.top === true
   return {
-    id, title, icon: def.icon || "📄", plugin, type, priority,
+    id, title, icon: def.icon || "📄", plugin, type, priority, top,
     src, html,
     style: asset(def.style),
     script: asset(def.script),
@@ -2998,9 +3007,11 @@ Bot.express.get(`${WEB_BASE}/api/health`, (req, res) => {
 })
 
 // 自定义页面：列表（仅返回前端渲染所需元数据）
+// top=true 的页面在侧边栏顶级显示，其余由前端收纳进「拓展页面」折叠分组
 Bot.express.get(`${WEB_BASE}/api/web-pages`, (req, res) => {
   const list = Bot.webAdapter.getPages().map(p => ({
     id: p.id, title: p.title, icon: p.icon, type: p.type, priority: p.priority,
+    plugin: p.plugin, top: p.top === true,
     src: p.src, html: p.html, style: p.style, script: p.script,
   }))
   res.json({ pages: list })

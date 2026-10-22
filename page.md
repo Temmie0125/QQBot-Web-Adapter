@@ -37,10 +37,21 @@ QQBot-Web-Adapter 支持在不改动插件主入口的情况下，给 Web 控制
 | `style` | ❌ | `webadapter/` 下的 css 文件，注入时按需加载。 |
 | `script` | ❌ | `webadapter/` 下的 js 文件，注入时按需加载。 |
 | `priority` | ❌ | 排序优先级，数值越小越靠前，默认 `100`。 |
+| `top` | ❌ | 设为 `true` 时页面固定显示在侧边栏顶级，不收纳进「拓展页面」折叠分组。仅特别重要的页面才建议使用。 |
 | `assetsDir` | ❌ | 静态资源目录（相对 `webadapter/`），其下**所有文件整体放行**，经 `GET /<basePath>/api/web-page/<插件名>/<目录>/<文件>` 访问，无需逐个列白名单。可传字符串或数组，如 `"public"` 或 `["public","icons"]`。 |
 
 - 同时提供 `html` 和 `src` 时，`src` 优先（`iframe` 模式）。
 - `src` / `style` / `script` 里写的是相对 `webadapter/` 目录的文件名（如 `"dash.html"`），不要写绝对路径或 `../`。
+
+### 侧边栏分组（拓展页面折叠）
+
+为避免导航栏过长，自定义页面按「顶级 / 折叠分组」两级显示（参照 Guoba 扩展页面逻辑）：
+
+- 配置项 `config.yaml` 的 `sidebarTopPlugins`：插件名（`plugins/` 下的目录名）数组，
+  其注册的页面显示在侧边栏顶级；默认含 `QQBot-Web-Adapter`、`QQBot-Plugin`、`ImageBed-Plugin`。
+- 其余插件的页面统一收纳进侧边栏「拓展页面」折叠分组：点击头部展开/收起（状态记忆在浏览器本地），
+  分组内子页处于激活态时头部高亮并自动展开；移动端不受影响，仍在「拓展」页横幅列表展示。
+- 单个页面可用描述符 `top: true` 强制顶级显示，无需把整个插件加入白名单。
 
 ### `style` / `script` 使用说明
 

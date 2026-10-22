@@ -291,6 +291,64 @@ body {
 .sidebar.collapsed .sidebar-toggle-text { display: none; }
 .sidebar.collapsed .sidebar-toggle-icon { transform: rotate(180deg); }
 
+/* 侧边栏-「拓展页面」折叠分组（收纳非顶级插件自定义页面，参照 Guoba 扩展页面） */
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+.nav-group-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.15s;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: none;
+}
+.nav-group-header:hover { background: var(--bg-hover); color: var(--text-primary); }
+.nav-group-header .nav-icon { opacity: 0.6; }
+.nav-group-header:hover .nav-icon { opacity: 1; }
+.nav-group-header .nav-group-title { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.nav-group-header .nav-group-arrow {
+  flex-shrink: 0;
+  font-size: 12px;
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+}
+.nav-group.expanded .nav-group-arrow { transform: rotate(90deg); }
+/* 分组内有子页处于激活态时，头部以主题色提示归属 */
+.nav-group.child-active .nav-group-header { color: var(--accent); }
+.nav-group.child-active .nav-group-header .nav-icon { opacity: 1; }
+
+.nav-group-body { display: none; flex-direction: column; gap: 2px; }
+.nav-group.expanded .nav-group-body { display: flex; animation: navGroupIn 0.18s ease; }
+@keyframes navGroupIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+/* 子项：缩进 + 前置圆点，形成层级感 */
+.nav-group-body .nav-item { position: relative; padding: 8px 14px 8px 32px; font-size: 13.5px; }
+.nav-group-body .nav-item::before {
+  content: "";
+  position: absolute;
+  left: 19px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.35;
+  transform: translateY(-50%);
+}
+/* 侧边栏整体收起时：头部仅剩图标，子项与常规项一致图标居中，去掉缩进装饰 */
+.sidebar.collapsed .nav-group-header { justify-content: center; padding: 10px 8px; }
+.sidebar.collapsed .nav-group-header .nav-group-title,
+.sidebar.collapsed .nav-group-header .nav-group-arrow { display: none; }
+.sidebar.collapsed .nav-group-body .nav-item { justify-content: center; padding: 10px 8px; }
+.sidebar.collapsed .nav-group-body .nav-item::before { display: none; }
+
 .sidebar-groups {
   padding: 8px;
   flex: 1;

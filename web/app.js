@@ -181,7 +181,79 @@ const webPagesMounted = new Set()
 // 记录当前处于「弹窗打开中」状态的自定义页面（由 iframe 通过 postMessage 上报）
 const webPageModalState = new Set()
 
+// 生成自定义页面的侧边栏导航项
+function makeWebPageNavItem(p) {
+  const a = document.createElement("a")
+  a.className = "nav-item"
+  a.dataset.page = p.id
+  a.href = `#${p.id}`
+  const icon = document.createElement("span")
+  icon.className = "nav-icon"
+  icon.textContent = p.icon || "📄"
+  const label = document.createElement("span")
+  label.textContent = p.title
+  a.appendChild(icon)
+  a.appendChild(label)
+  a.addEventListener("click", (e) => { e.preventDefault(); navigateTo(p.id) })
+  return a
+}
+
+// ===== 「拓展页面」折叠分组（参照 Guoba 扩展页面逻辑） =====
+// top 标记以外的自定义页面统一收纳进该分组，避免侧边栏过长
+const EXT_GROUP_KEY = "nav_ext_group_expanded"
+
+function isExtGroupExpanded() {
+  try { return localStorage.getItem(EXT_GROUP_KEY) === "1" } catch { return false }
+}
+
+function setExtGroupExpanded(expanded) {
+  const group = document.getElementById("navGroupExt")
+  if (!group) return
+  group.classList.toggle("expanded", !!expanded)
+  try { localStorage.setItem(EXT_GROUP_KEY, expanded ? "1" : "0") } catch {}
+}
+
+// 组装「拓展页面」折叠分组：头部点击切换展开，子项为常规 nav-item（高亮逻辑复用）
+function buildNavGroup(pages) {
+  const group = document.createElement("div")
+  group.className = "nav-group"
+  group.id = "navGroupExt"
+
+  const header = document.createElement("a")
+  header.className = "nav-group-header"
+  header.href = "#extensions-group"
+  const icon = document.createElement("span")
+  icon.className = "nav-icon"
+  icon.textContent = "🧩"
+  const title = document.createElement("span")
+  title.className = "nav-group-title"
+  title.textContent = "拓展页面"
+  const arrow = document.createElement("span")
+  arrow.className = "nav-group-arrow"
+  arrow.textContent = "▸"
+  header.append(icon, title, arrow)
+  header.addEventListener("click", (e) => {
+    e.preventDefault()
+    // 侧边栏整体收起时先展开侧边栏（复用底部按钮，写入宽度偏好），再切换分组
+    const sidebar = document.getElementById("sidebar")
+    if (sidebar && sidebar.classList.contains("collapsed")) {
+      const toggle = document.getElementById("sidebarToggle")
+      if (toggle) toggle.click()
+    }
+    setExtGroupExpanded(!group.classList.contains("expanded"))
+  })
+
+  const body = document.createElement("div")
+  body.className = "nav-group-body"
+  for (const p of pages) body.appendChild(makeWebPageNavItem(p))
+
+  group.append(header, body)
+  if (isExtGroupExpanded()) group.classList.add("expanded")
+  return group
+}
+
 // 拉取自定义页面并动态生成侧边栏项与页面容器
+// 服务端标记 top=true 的页面顶级显示（自带管理页面），其余插件页面收纳进「拓展页面」分组
 async function loadWebPages() {
   try {
     const res = await fetch(`${API_BASE}/web-pages`)
@@ -191,26 +263,12 @@ async function loadWebPages() {
     const nav = document.querySelector(".sidebar-nav")
     const spacer = nav ? nav.querySelector(".sidebar-spacer") : null
     const content = document.getElementById("mainContent")
+    const topPages = []
+    const groupPages = []
     for (const p of pages) {
       if (webPagesMap.has(p.id)) continue
       webPagesMap.set(p.id, p)
-
-      if (nav) {
-        const a = document.createElement("a")
-        a.className = "nav-item"
-        a.dataset.page = p.id
-        a.href = `#${p.id}`
-        const icon = document.createElement("span")
-        icon.className = "nav-icon"
-        icon.textContent = p.icon || "📄"
-        const label = document.createElement("span")
-        label.textContent = p.title
-        a.appendChild(icon)
-        a.appendChild(label)
-        a.addEventListener("click", (e) => { e.preventDefault(); navigateTo(p.id) })
-        if (spacer) nav.insertBefore(a, spacer)
-        else nav.appendChild(a)
-      }
+      ;(p.top ? topPages : groupPages).push(p)
 
       if (content) {
         const sec = document.createElement("section")
@@ -238,6 +296,10 @@ async function loadWebPages() {
         card.addEventListener("click", () => navigateTo(p.id))
         list.appendChild(card)
       }
+    }
+    if (nav) {
+      for (const p of topPages) nav.insertBefore(makeWebPageNavItem(p), spacer)
+      if (groupPages.length) nav.insertBefore(buildNavGroup(groupPages), spacer)
     }
     // 若当前 URL hash 指向某个自定义页面，进入后自动挂载
     const hash = location.hash.replace(/^#/, "")
@@ -301,6 +363,14 @@ function navigateTo(page, opts = {}) {
   // PC 侧边栏
   $$(".nav-item").forEach(el => el.classList.toggle("active", el.dataset.page === page))
   $$(".page").forEach(el => el.classList.toggle("active", el.id === `page-${page}`))
+
+  // 「拓展页面」分组：子页高亮时标记分组头部并自动展开（如 hash 直达）
+  const extGroup = document.getElementById("navGroupExt")
+  if (extGroup) {
+    const childActive = !!extGroup.querySelector(".nav-group-body .nav-item.active")
+    extGroup.classList.toggle("child-active", childActive)
+    if (childActive && !extGroup.classList.contains("expanded")) setExtGroupExpanded(true)
+  }
 
   // 移动端底部导航（自定义页面归属「拓展」入口，保持高亮）
   $$(".mobile-nav-item").forEach(el => {
