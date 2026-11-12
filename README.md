@@ -41,7 +41,7 @@
 
 ## 安装
 
-在 Yunzai 的根目录下执行以下命令安装本插件：
+在 Yunzai 的根目录下执行以下命令安装本插件（两个源选其中之一使用，gitee实时更新，gitcode会根据自动同步时间有一定更新延迟）：
 
 ```bash
 git clone https://github.com/Temmie0125/QQBot-Web-Adapter.git ./plugins/QQBot-Web-Adapter

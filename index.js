@@ -9,7 +9,23 @@ import { promisify } from "node:util"
 import { fileURLToPath, pathToFileURL } from 'url'
 import { createRequire } from "node:module"
 import express from "express"
-import { isGroupBlacklisted, isUserBlacklisted, blacklistGroup as blGroup, unblacklistGroup as unblGroup, blacklistUser as blUser, unblacklistUser as unblUser, getBlacklistData } from "../QQBot-Plugin/lib/blacklist.js"
+const candidates = [
+  new URL('../QQBot-Plugin/', import.meta.url),
+  new URL('../Yunzai-QQBot-Plugin/', import.meta.url),
+]
+const base = candidates.find(u => fsSync.existsSync(fileURLToPath(u)));
+if (!base) throw new Error('未安装QQBot-Plugin');
+
+const {
+  isGroupBlacklisted,
+  isUserBlacklisted,
+  blacklistGroup: blGroup,
+  unblacklistGroup: unblGroup,
+  blacklistUser: blUser,
+  unblacklistUser: unblUser,
+  getBlacklistData,
+} = await import(new URL('lib/blacklist.js', base).href);
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // 尝试加载 qrcode 包（QQBot-Plugin 已依赖）
@@ -4554,8 +4570,10 @@ Bot.express.post(`${WEB_BASE}/api/bot/:selfId/upload-image-raw`, express.raw({ t
 })
 
 // ========== 表情包管理 ==========
-import * as emojiStore from "../QQBot-Plugin/lib/emojiStore.js"
-import { parseMultipart } from "../QQBot-Plugin/lib/multipart.js"
+const emojiStore = await import(new URL('lib/emojiStore.js', base).href);
+const { parseMultipart } = await import(new URL('lib/multipart.js', base).href);
+//import * as emojiStore from "../QQBot-Plugin/lib/emojiStore.js"
+//import { parseMultipart } from "../QQBot-Plugin/lib/multipart.js"
 
 // 从 parseMultipart 返回的文件中取图标 buffer 与扩展名
 function readEmojiIcon(file) {

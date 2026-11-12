@@ -2,10 +2,18 @@
  * QQBot-Web-Adapter 自身扩展操作模块
  * 遵循与其他插件相同的 webadapter/index.js 约定，由框架自动扫描并调用 init(ctx)
  */
-
-import * as menuPanel from "../../QQBot-Plugin/lib/menuPanel.js"
 import fs from "node:fs"
 import path from "node:path"
+import fsSync from "node:fs"
+import { fileURLToPath } from 'url'
+
+const candidates = [
+  new URL('../../QQBot-Plugin/', import.meta.url),
+  new URL('../../Yunzai-QQBot-Plugin/', import.meta.url),
+]
+const base = candidates.find(u => fsSync.existsSync(fileURLToPath(u)));
+if (!base) throw new Error('未安装QQBot-Plugin');
+const menuPanel = await import(new URL('lib/menuPanel.js', base).href);
 
 export function init(ctx) {
   // ====== 页面注册 ======

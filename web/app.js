@@ -15,6 +15,21 @@ const WEB_BASE = (() => {
 })()
 const API_BASE = `${WEB_BASE}/api`
 
+;(function () {
+  function updateViewportHeight() {
+    const h = window.innerHeight || document.documentElement.clientHeight || 0
+    if (h > 0) document.documentElement.style.setProperty("--app-vh", (h / 100) + "px")
+  }
+  updateViewportHeight()
+  window.addEventListener("resize", updateViewportHeight)
+  window.addEventListener("orientationchange", updateViewportHeight)
+  window.addEventListener("pageshow", updateViewportHeight)
+  document.addEventListener("DOMContentLoaded", updateViewportHeight)
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", updateViewportHeight)
+  }
+})()
+
 // ===== 状态管理 =====
 const state = {
   bots: [],
